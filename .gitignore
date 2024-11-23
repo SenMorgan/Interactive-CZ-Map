@@ -1,0 +1,5 @@
+.pio
+.vscode/*
+platformio_override.ini
+
+!.vscode/extensions.json
