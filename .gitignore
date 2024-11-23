@@ -1,5 +1,6 @@
 .pio
 .vscode/*
 platformio_override.ini
+include/secrets.h
 
 !.vscode/extensions.json

@@ -10,6 +10,9 @@
 #ifndef _CONSTANTS_H
 #define _CONSTANTS_H
 
+// Topic to subscribe on AWS IoT Core
+#define AWS_IOT_SUBSCRIBE_TOPIC "interactive-cz-map"
+
 // Count of LEDs on the map
 #define LEDS_COUNT 72
 
