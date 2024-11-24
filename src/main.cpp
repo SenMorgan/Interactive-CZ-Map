@@ -1,6 +1,6 @@
 #include <ArduinoJson.h>
 #include <FastLED.h>
-#include <MQTTClient.h>
+#include <PubSubClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
@@ -9,14 +9,21 @@
 
 // Initialize Wi-Fi and MQTT client
 WiFiClientSecure net = WiFiClientSecure();
-MQTTClient client = MQTTClient(256);
+PubSubClient client(net);
 
 // Initialize array with number of LEDs
 CRGB leds[LEDS_COUNT];
 
-void messageHandler(String &topic, String &payload)
+void messageHandler(char *topic, byte *payload, unsigned int length)
 {
-    Serial.println("Incoming: " + topic + " - " + payload);
+    Serial.print("incoming: ");
+    Serial.print(topic);
+    Serial.print(" - ");
+    for (int i = 0; i < length; i++)
+    {
+        Serial.print((char)payload[i]);
+    }
+    Serial.println();
 
     // Blink with all LEDs for a while
     for (int i = 0; i < LEDS_COUNT; i++)
@@ -40,10 +47,10 @@ void initAWS()
     net.setPrivateKey(AWS_CERT_PRIVATE);
 
     // Connect to the MQTT broker on the AWS endpoint we defined earlier
-    client.begin(AWS_IOT_ENDPOINT, 8883, net);
+    client.setServer(AWS_IOT_ENDPOINT, 8883);
 
     // Create a message handler
-    client.onMessage(messageHandler);
+    client.setCallback(messageHandler);
 
     Serial.print("Connecting to AWS IoT...");
 
