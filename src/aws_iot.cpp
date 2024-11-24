@@ -6,25 +6,25 @@
 #include "leds.h"
 
 // Initialize Wi-Fi and MQTT client
-WiFiClientSecure net = WiFiClientSecure();
+WiFiClientSecure net;
 PubSubClient client(net);
 
 void messageHandler(char *topic, byte *payload, unsigned int length)
 {
     Serial.print(F("IoT message arrived. Topic: "));
     Serial.print(topic);
-    Serial.print(F("'. Message: '"));
-    for (int i = 0; i < length; i++)
+    Serial.print(F(". Message: "));
+    for (unsigned int i = 0; i < length; i++)
     {
         Serial.print((char)payload[i]);
     }
-    Serial.println(F("'"));
+    Serial.println();
 
     // Allocate the JSON document
-    JsonDocument doc;
+    StaticJsonDocument<1024> doc;
 
-    // Parse the JSON document and check for errors
-    DeserializationError error = deserializeJson(doc, payload);
+    // Parse the JSON document
+    DeserializationError error = deserializeJson(doc, payload, length);
     if (error)
     {
         Serial.print(F("deserializeJson() failed: "));
@@ -32,43 +32,19 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
         return;
     }
 
-    // Extract the Unit ID
-    const char *unit_id = doc["unit_id"];
-    Serial.println("Unit ID: " + String(unit_id));
-
-    // TODO: Implement the logic to control the LEDs
-    blinkAllLeds();
-}
-
-void initAWS()
-{
-    // Configure WiFiClientSecure to use the AWS IoT device credentials
-    net.setCACert(AWS_CERT_CA);
-    net.setCertificate(AWS_CERT_CRT);
-    net.setPrivateKey(AWS_CERT_PRIVATE);
-
-    // Connect to the MQTT broker on the AWS endpoint with default port
-    client.setServer(AWS_IOT_ENDPOINT, 8883);
-
-    // Set the message callback function
-    client.setCallback(messageHandler);
-
-    Serial.print(F("Connecting to AWS IoT..."));
-    while (!client.connect(THINGNAME))
+    // Extract the LEDs array
+    JsonArray ledsArray = doc["leds"];
+    if (!ledsArray.isNull())
     {
-        Serial.print(".");
-        delay(100);
+        for (JsonObject ledObj : ledsArray)
+        {
+            int index = ledObj["index"];
+            int brightness = ledObj["brightness"] | -1;
+            int blinks = ledObj["blinks"] | -1;
+            int delayTime = ledObj["delay"] | -1;
+
+            // Update the LED behavior
+            updateLeds(index, brightness, blinks, delayTime);
+        }
     }
-
-    // Check for connection to the AWS IoT
-    if (!client.connected())
-    {
-        Serial.println(F("\nError: AWS IoT connection failed!"));
-        return;
-    }
-
-    // Subscribe to a topic
-    client.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
-
-    Serial.println(F("\nAWS IoT connected"));
 }
