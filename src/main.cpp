@@ -25,6 +25,22 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
     }
     Serial.println();
 
+    // Allocate the JSON document
+    JsonDocument doc;
+
+    // Parse the JSON document and check for errors
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error)
+    {
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        return;
+    }
+
+    // Extract the Unit ID
+    const char *unit_id = doc["unit_id"];
+    Serial.println("Unit ID: " + String(unit_id));
+
     // Blink with all LEDs for a while
     for (int i = 0; i < LEDS_COUNT; i++)
         leds[i] = CRGB::Green;
@@ -33,10 +49,6 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
     for (int i = 0; i < LEDS_COUNT; i++)
         leds[i] = CRGB::Black;
     FastLED.show();
-
-    //  StaticJsonDocument<200> doc;
-    //  deserializeJson(doc, payload);
-    //  const char* message = doc["message"];
 }
 
 void initAWS()
