@@ -30,6 +30,7 @@ void setup()
 
 void loop()
 {
+    refreshLeds();
     client.loop();
     yield();
 }

@@ -4,8 +4,7 @@
 #include <FastLED.h>
 
 void initLeds();
-void blinkAllLeds();
-
-extern CRGB leds[];
+void setLed(int index, int brightness, int blinks, int delayTime, CRGB color);
+void refreshLeds();
 
 #endif // LEDS_H

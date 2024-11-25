@@ -32,12 +32,23 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
         return;
     }
 
-    // Extract the Unit ID
-    const char *unit_id = doc["unit_id"];
-    Serial.println("Unit ID: " + String(unit_id));
+    // TODO: Iterate over the array JsonArray leds = doc.as<JsonArray>(); for (JsonVariant led : leds) {}
 
-    // TODO: Implement the logic to control the LEDs
-    blinkAllLeds();
+    // Extract the LED index
+    int index = doc["index"];
+    // Extract the LED brightness
+    int brightness = doc["brightness"];
+    // Extract count of LED blinks
+    int blinks = doc["blinks"];
+    // Extract the delay between blinks in ms
+    int delayTime = doc["delay"];
+    // Extract the LED color
+    int r = doc["color"][0];
+    int g = doc["color"][1];
+    int b = doc["color"][2];
+
+    // Update the LED
+    setLed(index, brightness, blinks, delayTime, CRGB(r, g, b));
 }
 
 void initAWS()
