@@ -5,18 +5,17 @@
 // Initialize array with number of LEDs
 CRGB leds[LEDS_COUNT];
 
-// Struct to hold LED state
+// Struct to hold the state of an individual LED
 struct LedState
 {
-    int brightness = 0;
-    int blinksRemaining = 0;
-    int blinkDelay = 0;
-    unsigned long lastBlinkTime = 0;
-    bool isOn = false;
-    CRGB color = CRGB::Black;
+    int brightness = 0;          // Brightness level (0-255)
+    int fadeDelay = 0;           // Time to fade / time between individual blinks
+    int fadesCount = 0;          // Number of times to perform the effect
+    CRGB color = CRGB::Black;    // Color of the LED
+    bool isActive = false;       // Is the effect active
+    unsigned long startTime = 0; // Timestamp when the effect starts
 };
 
-// Array to hold state for each LED
 LedState ledStates[LEDS_COUNT];
 
 void initLeds()
@@ -32,23 +31,20 @@ void initLeds()
     }
     FastLED.show();
 
-    // Set global brightness
-    FastLED.setBrightness(255);
+    // Blink with all leds to indicate the start
+    setLed(63, 255, 500, 10, CRGB::Green);
 }
 
 /**
  * @brief Sets the state of an LED at a specified index.
  *
- * @param index The index of the LED to set. Must be within the range [0, LEDS_COUNT-1].
- * @param brightness The brightness level to set for the LED (0-255). If negative, the brightness is not changed.
- * @param blinks The number of times the LED should blink. If negative, the blink count is not changed.
- * @param delayTime The delay time in milliseconds between blinks. If negative, the delay time is not changed.
- * @param color The color to set for the LED.
- *
- * @note The blink count is multiplied by 2 to account for on/off cycles.
- * @note The function updates the last blink time to the current time.
+ * @param index The index of the LED to set. Must be within the bounds of the LED array.
+ * @param brightness The brightness level to set for the LED (0-255). If negative, the brightness is not updated.
+ * @param fadeDelay The delay for the fade effect in milliseconds. If negative, the fade delay is not updated.
+ * @param fadesCount The number of times the fade effect should repeat. If less than 2, the effect is not repeated.
+ * @param color The color to set for the LED from the CRGB color palette.
  */
-void setLed(int index, int brightness, int blinks, int delayTime, CRGB color)
+void setLed(int index, int brightness, int fadeDelay, int fadesCount, CRGB color)
 {
     // Check if index is within bounds
     if (index < 0 || index >= LEDS_COUNT)
@@ -58,58 +54,74 @@ void setLed(int index, int brightness, int blinks, int delayTime, CRGB color)
     LedState &state = ledStates[index];
 
     // Update the LED state
-    state.color = color;
-    state.lastBlinkTime = millis();
     if (brightness >= 0)
         state.brightness = brightness;
-    if (blinks >= 0)
-        state.blinksRemaining = blinks;
-    if (delayTime >= 0)
-        state.blinkDelay = delayTime;
+    if (fadeDelay >= 0)
+        state.fadeDelay = fadeDelay;
+    if (fadesCount > 1)
+        state.fadesCount = fadesCount;
+    else
+        state.fadesCount = 1;
+
+    state.color = color;
+    state.startTime = millis();
+    state.isActive = true;
 }
 
 /**
- * @brief Refreshes the state of the LEDs based on their blinking patterns.
+ * @brief Refreshes the state of the LEDs by updating their colors and brightness based on the current time and their respective states.
  *
- * This function iterates through all the LEDs and updates their state
- * (on/off) based on the time elapsed since the last blink. If the LED
- * is supposed to blink, it toggles its state and updates the last blink
- * time. Once the LED has completed its designated number of blinks, it
- * is turned off.
+ * This function iterates over all LEDs, checks their active state, and updates their colors and brightness according to the fade effect.
+ * If the effect is active, it calculates the elapsed time since the effect started and adjusts the brightness accordingly.
+ * If the effect has completed for the current cycle, it turns off the LED and decreases the repeat count.
+ * If the LED is not active but has remaining repeats, it restarts the effect.
+ * Finally, it updates the LED strip to reflect the changes.
  */
 void refreshLeds()
 {
     unsigned long currentTime = millis();
 
-    // Iterate through all LEDs
+    // Iterate over all LEDs
     for (int i = 0; i < LEDS_COUNT; i++)
     {
         // Get the LED state from the array
         LedState &state = ledStates[i];
 
-        // Check if the LED is blinking and it's time to toggle its state
-        if (state.blinksRemaining > 0 && currentTime - state.lastBlinkTime >= state.blinkDelay)
+        // Check if the effect is active
+        if (state.isActive)
         {
-            // Toggle LED state and update blink time
-            state.isOn = !state.isOn;
-            state.lastBlinkTime = currentTime;
+            // Calculate the elapsed time since the effect started
+            unsigned long elapsed = currentTime - state.startTime;
 
-            // Decrement the blink count
-            if (!state.isOn)
-                state.blinksRemaining--;
-
-            // Turn off LED if the blink count is exhausted
-            if (state.blinksRemaining == 0 && state.isOn)
+            // Check if the elapsed time is less than the fade delay
+            if (elapsed < state.fadeDelay)
             {
-                leds[i] = CRGB::Black;
-                FastLED.show();
+                // Calculate the progress of the fade effect
+                float fadeProgress = (float)elapsed / state.fadeDelay;
+                // Calculate the current brightness based on the fade progress
+                int currentBrightness = (int)(state.brightness * (1.0 - fadeProgress));
+                // Set the LED color and brightness
+                leds[i] = state.color;
+                leds[i].nscale8_video(currentBrightness);
             }
             else
             {
-                // Set LED color based on state
-                leds[i] = state.isOn ? state.color : CRGB::Black;
-                FastLED.show();
+                // The effect has completed for this cycle. Decrease the repeat count and reset flag.
+                leds[i] = CRGB::Black;
+                state.fadesCount--;
+                state.isActive = false;
             }
         }
+        else if (state.fadesCount > 0)
+        {
+            // Start/repeat the effect if the repeat count is greater than 0
+            state.startTime = millis();
+            state.isActive = true;
+            leds[i] = state.color;
+            leds[i].nscale8_video(state.brightness);
+        }
     }
+
+    // Update the LED strip after all calculations
+    FastLED.show();
 }

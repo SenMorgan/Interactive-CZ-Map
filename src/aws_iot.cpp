@@ -48,7 +48,7 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
     int b = doc["color"][2];
 
     // Update the LED
-    setLed(index, brightness, blinks, delayTime, CRGB(r, g, b));
+    setLed(index, brightness, delayTime, blinks, CRGB(r, g, b));
 }
 
 void initAWS()
