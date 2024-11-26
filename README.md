@@ -14,7 +14,9 @@ The project was created in PlatformIO 22.11.2024
 1. Ensure you have the [PlatformIO](https://platformio.org/) extension installed in VS Code.
 2. Create a copy of `platformio_override.ini.example` and rename it to `platformio_override.ini`.
 3. Customize values in `platformio_override.ini`.
-4. Use PlatformIO to build and upload the project to your ESP device.
+4. Create a copy of `src/secrets.h.example` and rename it to `src/secrets.h`.
+5. Customize values in `src/secrets.h` to match your AWS IoT Core configuration. Use [this guide](https://aws.amazon.com/ru/blogs/compute/building-an-aws-iot-core-device-using-aws-serverless-and-an-esp32/) to create a new thing in AWS IoT Core and get the required values.
+6. Use PlatformIO to build and upload the project to your ESP device.
 
 ## Testing
 You can send messages to the device in AWS IoT MQTT Test console.
