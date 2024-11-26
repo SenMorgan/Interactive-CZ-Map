@@ -16,6 +16,19 @@ The project was created in PlatformIO 22.11.2024
 3. Customize values in `platformio_override.ini`.
 4. Use PlatformIO to build and upload the project to your ESP device.
 
+## Testing
+You can send messages to the device in AWS IoT MQTT Test console.
+Use topic `interactive-cz-map` and payload:
+```json
+{
+    "index": 0,
+    "brightness": 255,
+    "blinks": 3,
+    "delay": 1000,
+    "color": [255, 100, 0]
+}
+```
+
 ## Dependencies
 All dependencies could be found in `platformio.ini` file under `lib_deps` section.
 
