@@ -16,6 +16,12 @@
 // Count of LEDs on the map
 #define LEDS_COUNT 72
 
+// Maximum fade effect duration in milliseconds
+#define MAX_FADE_DURATION 5000
+
+// Maximum number of fade effect repeats
+#define MAX_FADE_REPEATS 100
+
 // IO pins
 #define LEDS_PIN GPIO_NUM_25
 

@@ -9,15 +9,19 @@ CRGB leds[LEDS_COUNT];
 struct LedState
 {
     int brightness = 0;          // Brightness level (0-255)
-    int fadeDelay = 0;           // Time to fade / time between individual blinks
-    int fadesCount = 0;          // Number of times to perform the effect
+    int fadeDuration = 0;        // Duration of the fade effect in milliseconds
+    int fadeCycles = 0;          // Number of times to perform the effect
     CRGB color = CRGB::Black;    // Color of the LED
-    bool isActive = false;       // Is the effect active
-    unsigned long startTime = 0; // Timestamp when the effect starts
+    bool isFading = false;       // Flag to indicate if the LED is currently fading
+    unsigned long startTime = 0; // Time when the effect started
 };
 
+// Array to hold the state of all LEDs
 LedState ledStates[LEDS_COUNT];
 
+/**
+ * @brief Initializes the LED strip and sets all LEDs to off.
+ */
 void initLeds()
 {
     // Initialize LED strip
@@ -31,41 +35,52 @@ void initLeds()
     }
     FastLED.show();
 
-    // Blink with all leds to indicate the start
-    setLed(63, 255, 500, 10, CRGB::Green);
+    // Blink with one LED to indicate the start
+    setLed(63, 255, 200, 10, CRGB::Green);
 }
 
 /**
- * @brief Sets the state of an LED at a specified index.
+ * @brief Sets the state of an LED at a specified index. If any of the parameters are out of bounds,
+ * then the parameters will be ignored and a message will be printed to the serial monitor.
  *
- * @param index The index of the LED to set. Must be within the bounds of the LED array.
- * @param brightness The brightness level to set for the LED (0-255). If negative, the brightness is not updated.
- * @param fadeDelay The delay for the fade effect in milliseconds. If negative, the fade delay is not updated.
- * @param fadesCount The number of times the fade effect should repeat. If less than 2, the effect is not repeated.
+ * @param index The index of the LED to set [0, LEDS_COUNT - 1].
+ * @param brightness The brightness level to set for the LED [0, 255].
+ * @param fadeDuration The delay for the fade effect in milliseconds [0, MAX_FADE_DURATION].
+ * @param fadeCycles The number of times the fade effect should repeat [1, MAX_FADE_REPEATS].
  * @param color The color to set for the LED from the CRGB color palette.
  */
-void setLed(int index, int brightness, int fadeDelay, int fadesCount, CRGB color)
+void setLed(int index, int brightness, int fadeDuration, int fadeCycles, CRGB color)
 {
     // Check if index is within bounds
     if (index < 0 || index >= LEDS_COUNT)
+    {
+        Serial.printf("Index [%d] is out of bounds [0, %d]\n", index, LEDS_COUNT - 1);
         return;
+    }
 
     // Get the LED state from the array
     LedState &state = ledStates[index];
 
-    // Update the LED state
-    if (brightness >= 0)
+    // Validate and set the brightness
+    if (brightness >= 0 && brightness <= 255)
         state.brightness = brightness;
-    if (fadeDelay >= 0)
-        state.fadeDelay = fadeDelay;
-    if (fadesCount > 1)
-        state.fadesCount = fadesCount;
     else
-        state.fadesCount = 1;
+        Serial.printf("Brightness [%d] is out of bounds [0, 255]\n", brightness);
 
+    // Validate and set the fade delay
+    if (fadeDuration >= 0 && fadeDuration <= MAX_FADE_DURATION)
+        state.fadeDuration = fadeDuration;
+    else
+        Serial.printf("Fade delay [%d] is out of bounds [0, %d]\n", fadeDuration, MAX_FADE_DURATION);
+
+    // Validate and set the fade count. This parameter starts the effect if it is greater than 0.
+    if (fadeCycles > 0 && fadeCycles <= MAX_FADE_REPEATS)
+        state.fadeCycles = fadeCycles;
+    else
+        Serial.printf("Fade cycles [%d] is out of bounds [1, %d]\n", fadeCycles, MAX_FADE_REPEATS);
+
+    // Set the color without validating
     state.color = color;
-    state.startTime = millis();
-    state.isActive = true;
 }
 
 /**
@@ -87,17 +102,17 @@ void refreshLeds()
         // Get the LED state from the array
         LedState &state = ledStates[i];
 
-        // Check if the effect is active
-        if (state.isActive)
+        // Check if the LED is currently fading
+        if (state.isFading)
         {
-            // Calculate the elapsed time since the effect started
+            // Calculate the elapsed time since the fade effect started
             unsigned long elapsed = currentTime - state.startTime;
 
             // Check if the elapsed time is less than the fade delay
-            if (elapsed < state.fadeDelay)
+            if (elapsed < state.fadeDuration)
             {
                 // Calculate the progress of the fade effect
-                float fadeProgress = (float)elapsed / state.fadeDelay;
+                float fadeProgress = (float)elapsed / state.fadeDuration;
                 // Calculate the current brightness based on the fade progress
                 int currentBrightness = (int)(state.brightness * (1.0 - fadeProgress));
                 // Set the LED color and brightness
@@ -106,17 +121,18 @@ void refreshLeds()
             }
             else
             {
-                // The effect has completed for this cycle. Decrease the repeat count and reset flag.
+                // The fade effect has completed for this cycle. Decrease the repeat count and reset flag.
                 leds[i] = CRGB::Black;
-                state.fadesCount--;
-                state.isActive = false;
+                state.fadeCycles--;
+                if (state.fadeCycles < 0) state.fadeCycles = 0;
+                state.isFading = false;
             }
         }
-        else if (state.fadesCount > 0)
+        else if (state.fadeCycles > 0)
         {
             // Start/repeat the effect if the repeat count is greater than 0
-            state.startTime = millis();
-            state.isActive = true;
+            state.startTime = currentTime;
+            state.isFading = true;
             leds[i] = state.color;
             leds[i].nscale8_video(state.brightness);
         }

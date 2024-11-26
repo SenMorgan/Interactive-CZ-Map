@@ -8,8 +8,7 @@ void setup()
 {
     Serial.begin(115200);
     delay(10);
-    Serial.print(F("\n\nConnecting to "));
-    Serial.println(WIFI_SSID "...");
+    Serial.print(F("\n\nConnecting to " WIFI_SSID "..."));
 
     // Set device as a Wi-Fi Station
     WiFi.hostname(HOSTNAME);
@@ -20,8 +19,7 @@ void setup()
         delay(500);
         Serial.print(".");
     }
-    Serial.println(F("\nWiFi connected"));
-    Serial.print(F("IP address: "));
+    Serial.print(F("\nWiFi connected\nIP address: "));
     Serial.println(WiFi.localIP());
 
     initAWS();
@@ -30,7 +28,7 @@ void setup()
 
 void loop()
 {
-    refreshLeds();
-    client.loop();
-    yield();
+    refreshLeds(); // Update the state of the LEDs
+    client.loop(); // Maintain the MQTT connection
+    yield();       // Allow the ESP32 to perform background tasks
 }
