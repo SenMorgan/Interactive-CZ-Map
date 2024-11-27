@@ -4,8 +4,7 @@
 #include <PubSubClient.h>
 
 void initAWS();
-void messageHandler(char *topic, byte *payload, unsigned int length);
-
-extern PubSubClient client;
+void maintainAWSConnection();
+void periodicStatusPublish();
 
 #endif // AWS_IOT_H

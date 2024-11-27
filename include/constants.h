@@ -24,10 +24,13 @@
 // Base MQTT topic for the project
 #define MQTT_BASE_TOPIC "interactive-cz-map"
 
-// Full MQTT topics for subscribing
+// Full MQTT topics for subscribing and publishing
 // Commands sent to the device
 #define MQTT_SUB_TOPIC_LEDS   MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/leds"
 #define MQTT_SUB_TOPIC_UPDATE MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/update"
+
+// Status published by the device
+#define MQTT_PUB_TOPIC_STATUS MQTT_BASE_TOPIC "/" DEVICE_ID "/status"
 
 // Wildcard topics for broader subscriptions
 #define MQTT_SUB_TOPIC_ALL_COMMANDS MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/#"
@@ -51,5 +54,14 @@
 
 // Maximum number of fade effect repeats
 #define MAX_FADE_REPEATS 100
+
+// ============================================================================
+// Software Versioning
+// ============================================================================
+
+// Software version must be set via build flags, so here we just check if it's defined
+#ifndef SOFTWARE_VERSION
+#error "SOFTWARE_VERSION must be defined in build flags!"
+#endif
 
 #endif // _CONSTANTS_H

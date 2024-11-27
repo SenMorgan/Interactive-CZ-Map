@@ -4,11 +4,23 @@
 #include "constants.h"
 #include "leds.h"
 
+// Interval for publishing device status (in milliseconds)
+#define STATUS_PUBLISH_INTERVAL 60 * 1000
+// Initial delay before attempting to reconnect to AWS IoT (in milliseconds)
+#define RECONNECT_INITIAL_DELAY 100
+// Maximum delay between reconnection attempts to AWS IoT (in milliseconds)
+#define RECONNECT_MAX_DELAY     30000
+
 // Initialize Wi-Fi and MQTT client
 WiFiClientSecure net;
 PubSubClient client(net);
 
+// Global variables
+uint32_t lastPublishTime = 0; // Last time the device status was published
+
 // Function declarations for handlers
+void connectToAWS();
+void publishStatus();
 void messageHandler(char *topic, byte *payload, unsigned int length);
 void handleLedsCommand(JsonDocument &doc);
 void handleUpdateCommand(JsonDocument &doc);
@@ -38,24 +50,123 @@ void initAWS()
     // Set the message callback function
     client.setCallback(messageHandler);
 
-    Serial.print(F("Connecting to AWS IoT..."));
+    // Attempt to connect to AWS IoT
+    Serial.println(F("Connecting to AWS IoT..."));
+    connectToAWS();
+}
+
+/**
+ * @brief Attempts to connect to AWS IoT and handles reconnection logic.
+ *
+ * This function tries to establish a connection to AWS IoT using the client object.
+ * If the connection is successful, it resets the reconnection delay, subscribes to
+ * necessary MQTT topics, and publishes the device status. If the connection fails,
+ * it prints the error code and retries after an exponential backoff delay.
+ */
+void connectToAWS()
+{
+    static uint32_t reconnectDelay = RECONNECT_INITIAL_DELAY;
+
+    // Attempt to connect to AWS IoT indefinitely
     while (!client.connect(THINGNAME))
     {
-        Serial.print(F("."));
-        delay(100);
+        // Connection failed - retry after delay
+        Serial.printf("Connection to AWS IoT failed, rc=%d\n", client.state());
+        Serial.printf("Retrying in %lu ms\n", reconnectDelay);
+        delay(reconnectDelay);
+
+        // Exponential backoff with a limit
+        if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
+            reconnectDelay *= 2;
+        else
+            reconnectDelay = RECONNECT_MAX_DELAY;
     }
 
-    // Check for connection to the AWS IoT
+    // Connection successful
+    Serial.println(F("Connected to AWS IoT"));
+    reconnectDelay = RECONNECT_INITIAL_DELAY;      // Reset reconnect delay
+    client.subscribe(MQTT_SUB_TOPIC_ALL_COMMANDS); // Subscribe to all commands
+    publishStatus();                               // Publish the device status
+}
+
+/**
+ * @brief Maintains the connection to AWS IoT.
+ *
+ * This function ensures that the MQTT client remains connected to AWS IoT and handles
+ * MQTT loop processing. It should be called in the main loop to maintain the connection.
+ * If the client is already connected, it simply returns. If the client is
+ * not connected, it attempts to reconnect in a loop until successful.
+ */
+void maintainAWSConnection()
+{
+    // If the client is connected, simply return
+    if (client.loop())
+        return;
+
+    // If the client is not connected, attempt to reconnect
+    Serial.println(F("AWS IoT client disconnected. Attempting to reconnect..."));
+    connectToAWS();
+}
+
+/**
+ * @brief Publishes the device status, including software version and other relevant information.
+ *
+ * This function constructs a JSON document containing the device's current status,
+ * such as software version, Wi-Fi status, IP address, and any other pertinent details.
+ * It then publishes this JSON document to the predefined MQTT status topic.
+ */
+void publishStatus()
+{
     if (!client.connected())
     {
-        Serial.println(F("\nError: AWS IoT connection failed!"));
+        Serial.println(F("Cannot publish status: AWS IoT client not connected"));
         return;
     }
 
-    // Subscribe to topics
-    client.subscribe(MQTT_SUB_TOPIC_ALL_COMMANDS);
+    // Allocate the JSON document
+    JsonDocument doc;
 
-    Serial.println(F("\nAWS IoT connected"));
+    // Populate the JSON document with status information
+    doc["software_version"] = SOFTWARE_VERSION;
+    doc["uptime"] = millis() / 1000;
+    doc["wifi_ssid"] = WiFi.SSID();
+    doc["ip_address"] = WiFi.localIP().toString();
+    doc["mac_address"] = WiFi.macAddress();
+    doc["hostname"] = WiFi.getHostname();
+
+    // Convert JSON document to string
+    char buffer[256];
+    size_t n = serializeJson(doc, buffer);
+
+    // Publish the status message
+    if (client.publish(MQTT_PUB_TOPIC_STATUS, buffer))
+    {
+        // Optionally print the status message to the Serial monitor
+        // Serial.printf("Device status published to topic: %s\n", MQTT_PUB_TOPIC_STATUS);
+        // Serial.printf("Status size: %d bytes, JSON: %s\n", n, buffer);
+    }
+    else
+    {
+        Serial.println(F("Failed to publish device status"));
+    }
+
+    // Set last publish time to current time
+    lastPublishTime = millis();
+}
+
+/**
+ * @brief Publishes the status periodically.
+ *
+ * This function checks the elapsed time since the last status publish and
+ * publishes the status if the elapsed time is greater than or equal to the
+ * STATUS_PUBLISH_INTERVAL.
+ *
+ * @note Variable lastPublishTime is updated in the publishStatus() function.
+ */
+void periodicStatusPublish()
+{
+    if (millis() - lastPublishTime >= STATUS_PUBLISH_INTERVAL)
+        publishStatus();
 }
 
 /**
@@ -121,7 +232,7 @@ void handleLedsCommand(JsonDocument &doc)
 // Handler for Update commands
 void handleUpdateCommand(JsonDocument &doc)
 {
-    #define FIRMWARE_URL_KEY "firmware_url"
+#define FIRMWARE_URL_KEY "firmware_url"
 
     // Example: Handle firmware update command
     const char *firmwareUrl = doc[FIRMWARE_URL_KEY];
@@ -132,6 +243,6 @@ void handleUpdateCommand(JsonDocument &doc)
     }
     else
     {
-        Serial.println(F("Invalid update command received. No '" FIRMWARE_URL_KEY "' key found."));
+        Serial.println(F("Invalid update command received. No '" FIRMWARE_URL_KEY "' key found"));
     }
 }
