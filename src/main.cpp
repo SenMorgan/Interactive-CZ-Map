@@ -1,6 +1,5 @@
 #include <WiFi.h>
 #include "constants.h"
-#include "secrets.h"
 #include "aws_iot.h"
 #include "leds.h"
 

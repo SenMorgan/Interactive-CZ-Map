@@ -20,7 +20,7 @@ The project was created in PlatformIO 22.11.2024
 
 ## Testing
 You can send messages to the device in AWS IoT MQTT Test console.
-Use topic `interactive-cz-map` and payload:
+Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/leds` and payload:
 ```json
 {
     "index": 0,
