@@ -29,8 +29,9 @@
 #define MQTT_SUB_TOPIC_LEDS   MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/leds"
 #define MQTT_SUB_TOPIC_UPDATE MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/update"
 
-// Status published by the device
+// Topics published by the device
 #define MQTT_PUB_TOPIC_STATUS MQTT_BASE_TOPIC "/" DEVICE_ID "/status"
+#define MQTT_PUB_TOPIC_UPDATE_STATUS MQTT_BASE_TOPIC "/" DEVICE_ID "/status/update"
 
 // Wildcard topics for broader subscriptions
 #define MQTT_SUB_TOPIC_ALL_COMMANDS MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/#"

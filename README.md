@@ -20,6 +20,8 @@ The project was created in PlatformIO 22.11.2024
 
 ## Testing
 You can send messages to the device in AWS IoT MQTT Test console.
+
+### Set LED color
 Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/leds` and payload:
 ```json
 {
@@ -28,6 +30,14 @@ Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/leds` and payload:
     "blinks": 3,
     "delay": 1000,
     "color": [255, 100, 0]
+}
+```
+
+### OTA Update
+Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/update` and payload:
+```json
+{
+    "firmware_url": "https://example.com/firmware.bin"
 }
 ```
 

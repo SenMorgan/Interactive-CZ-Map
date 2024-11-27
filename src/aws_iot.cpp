@@ -3,6 +3,7 @@
 #include "aws_iot.h"
 #include "constants.h"
 #include "leds.h"
+#include "software_update.h"
 
 // Interval for publishing device status (in milliseconds)
 #define STATUS_PUBLISH_INTERVAL 60 * 1000
@@ -229,20 +230,68 @@ void handleLedsCommand(JsonDocument &doc)
                   index, brightness, blinks, delayTime, r, g, b);
 }
 
+/**
+ * @brief Publishes the OTA update status to the AWS IoT topic.
+ *
+ * This function publishes a JSON message containing the OTA update status,
+ * including whether the update was successful, a message, and a timestamp.
+ * The message is published to the MQTT topic defined by MQTT_PUB_TOPIC_UPDATE_STATUS.
+ *
+ * @param success A boolean indicating whether the OTA update was successful.
+ * @param message A C-string containing a message describing the update status.
+ */
+void publishOTAUpdateStatus(bool success, const char *message)
+{
+    Serial.printf("OTA update result: %s. Message: %s\n", success ? "Success" : "Failed", message);
+
+    if (!client.connected())
+    {
+        Serial.println(F("Cannot publish update status: AWS IoT client not connected"));
+        return;
+    }
+
+    // Allocate the JSON document
+    JsonDocument doc;
+
+    // Populate the JSON document with the update status
+    doc["success"] = success;
+    doc["message"] = message;
+    doc["timestamp"] = millis() / 1000;
+
+    // Convert JSON document to string
+    char buffer[256];
+    size_t n = serializeJson(doc, buffer);
+
+    // Publish the update status message
+    if (client.publish(MQTT_PUB_TOPIC_UPDATE_STATUS, buffer))
+    {
+        // Optionally print the status message to the Serial monitor
+        Serial.printf("Update status published to topic: %s\n", MQTT_PUB_TOPIC_UPDATE_STATUS);
+        Serial.printf("Status size: %d bytes, JSON: %s\n", n, buffer);
+    }
+    else
+    {
+        Serial.println(F("Failed to publish update status"));
+    }
+}
+
 // Handler for Update commands
 void handleUpdateCommand(JsonDocument &doc)
 {
 #define FIRMWARE_URL_KEY "firmware_url"
 
-    // Example: Handle firmware update command
+    // Extract the firmware URL from the JSON document
     const char *firmwareUrl = doc[FIRMWARE_URL_KEY];
-    if (firmwareUrl)
+
+    if (firmwareUrl && strlen(firmwareUrl) > 0)
     {
         Serial.printf("Received firmware update URL: %s\n", firmwareUrl);
-        // TODO: Implement firmware update logic here
+
+        // Perform the firmware update
+        performFirmwareUpdate(firmwareUrl, publishOTAUpdateStatus);
     }
     else
     {
-        Serial.println(F("Invalid update command received. No '" FIRMWARE_URL_KEY "' key found"));
+        publishOTAUpdateStatus(false, "Invalid update command received. No '" FIRMWARE_URL_KEY "' key found");
     }
 }
