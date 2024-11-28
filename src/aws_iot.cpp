@@ -130,6 +130,7 @@ void publishStatus()
     // Populate the JSON document with status information
     doc["software_version"] = SOFTWARE_VERSION;
     doc["uptime"] = millis() / 1000;
+    doc["reset_reason"] = esp_reset_reason();
     doc["wifi_ssid"] = WiFi.SSID();
     doc["ip_address"] = WiFi.localIP().toString();
     doc["mac_address"] = WiFi.macAddress();
