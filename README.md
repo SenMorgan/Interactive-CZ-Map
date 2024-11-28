@@ -33,7 +33,7 @@ Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/leds` and payload:
 }
 ```
 
-### OTA Update
+### Firmware Update via MQTT
 Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/update` and payload:
 ```json
 {

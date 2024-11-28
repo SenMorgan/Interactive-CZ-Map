@@ -30,7 +30,7 @@
 #define MQTT_SUB_TOPIC_UPDATE MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/update"
 
 // Topics published by the device
-#define MQTT_PUB_TOPIC_STATUS MQTT_BASE_TOPIC "/" DEVICE_ID "/status"
+#define MQTT_PUB_TOPIC_STATUS        MQTT_BASE_TOPIC "/" DEVICE_ID "/status"
 #define MQTT_PUB_TOPIC_UPDATE_STATUS MQTT_BASE_TOPIC "/" DEVICE_ID "/status/update"
 
 // Wildcard topics for broader subscriptions
