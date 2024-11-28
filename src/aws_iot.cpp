@@ -110,6 +110,50 @@ void maintainAWSConnection()
 }
 
 /**
+ * @brief Publishes a JSON document to a specified MQTT topic.
+ *
+ * This function serializes a given JSON document and publishes it to the specified
+ * MQTT topic using the AWS IoT client.
+ *
+ * @param topic The MQTT topic to publish the JSON document to.
+ * @param doc The JSON document to be published.
+ */
+void publishJson(const char *topic, const JsonDocument &doc)
+{
+#define BUFFER_SIZE 256 // Size of the buffer for serializing JSON
+
+    // Allocate a buffer for the JSON document and serialize it
+    char buffer[BUFFER_SIZE];
+    size_t serializedSize = serializeJson(doc, buffer, BUFFER_SIZE);
+
+    // Check if the buffer is large enough for the JSON document
+    if (serializedSize >= BUFFER_SIZE)
+    {
+        Serial.printf("Failed to publish message to topic '%s': Buffer (%d bytes) too small for JSON (%d bytes)\n",
+                      topic, BUFFER_SIZE, serializedSize);
+        lastPublishTime = millis(); // Update last publish time to prevent rapid publishing
+        return;
+    }
+
+    // Check if MQTT client is connected
+    if (!client.connected())
+    {
+        Serial.printf("Error publishing to topic '%s': AWS IoT client not connected\n", topic);
+        lastPublishTime = millis(); // Update last publish time to prevent rapid publishing
+        return;
+    }
+
+    // Publish the message to the specified topic
+    if (client.publish(topic, buffer))
+        Serial.printf("Published %d bytes to topic '%s'\n", serializedSize, topic);
+    else
+        Serial.printf("Failed to publish message to topic '%s'\n", topic);
+
+    // Set last publish time to the current time after attempting to publish
+    lastPublishTime = millis();
+}
+
+/**
  * @brief Publishes the device status, including software version and other relevant information.
  *
  * This function constructs a JSON document containing the device's current status,
@@ -118,12 +162,6 @@ void maintainAWSConnection()
  */
 void publishStatus()
 {
-    if (!client.connected())
-    {
-        Serial.println(F("Cannot publish status: AWS IoT client not connected"));
-        return;
-    }
-
     // Allocate the JSON document
     JsonDocument doc;
 
@@ -136,24 +174,8 @@ void publishStatus()
     doc["mac_address"] = WiFi.macAddress();
     doc["hostname"] = WiFi.getHostname();
 
-    // Convert JSON document to string
-    char buffer[256];
-    size_t n = serializeJson(doc, buffer);
-
     // Publish the status message
-    if (client.publish(MQTT_PUB_TOPIC_STATUS, buffer))
-    {
-        // Optionally print the status message to the Serial monitor
-        // Serial.printf("Device status published to topic: %s\n", MQTT_PUB_TOPIC_STATUS);
-        // Serial.printf("Status size: %d bytes, JSON: %s\n", n, buffer);
-    }
-    else
-    {
-        Serial.println(F("Failed to publish device status"));
-    }
-
-    // Set last publish time to current time
-    lastPublishTime = millis();
+    publishJson(MQTT_PUB_TOPIC_STATUS, doc);
 }
 
 /**
@@ -181,12 +203,6 @@ void publishFirmwareUpdateStart(const char *firmwareUrl)
     String statusMessage = "Starting firmware update from: " + String(firmwareUrl);
     Serial.println(statusMessage);
 
-    if (!client.connected())
-    {
-        Serial.println(F("Cannot publish firmware update start: AWS IoT client not connected"));
-        return;
-    }
-
     // Allocate the JSON document
     JsonDocument doc;
 
@@ -194,15 +210,8 @@ void publishFirmwareUpdateStart(const char *firmwareUrl)
     doc["status"] = "in_progress";
     doc["message"] = statusMessage;
 
-    // Convert JSON document to string
-    char buffer[128];
-    size_t n = serializeJson(doc, buffer);
-
-    // Publish the update status message and print error if failed
-    if (!client.publish(MQTT_PUB_TOPIC_UPDATE_STATUS, buffer))
-    {
-        Serial.println(F("Failed to publish update start message"));
-    }
+    // Publish the update start message
+    publishJson(MQTT_PUB_TOPIC_UPDATE_STATUS, doc);
 }
 
 /**
@@ -218,12 +227,6 @@ void publishFirmwareUpdateResult(bool success, const char *message)
     snprintf(statusMessage, sizeof(statusMessage), "Firmware update %s. %s", success ? "successful" : "failed", message);
     Serial.println(statusMessage);
 
-    if (!client.connected())
-    {
-        Serial.println(F("Cannot publish firmware update result: AWS IoT client not connected"));
-        return;
-    }
-
     // Allocate the JSON document
     JsonDocument doc;
 
@@ -231,15 +234,8 @@ void publishFirmwareUpdateResult(bool success, const char *message)
     doc["status"] = success ? "success" : "failure";
     doc["message"] = statusMessage;
 
-    // Convert JSON document to string
-    char buffer[128];
-    size_t n = serializeJson(doc, buffer);
-
-    // Publish the update result message and print error if failed
-    if (!client.publish(MQTT_PUB_TOPIC_UPDATE_STATUS, buffer))
-    {
-        Serial.println(F("Failed to publish update result"));
-    }
+    // Publish the update result message
+    publishJson(MQTT_PUB_TOPIC_UPDATE_STATUS, doc);
 }
 
 /**
