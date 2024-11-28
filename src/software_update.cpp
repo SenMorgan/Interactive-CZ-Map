@@ -18,7 +18,7 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
     // Initialize HTTP client
     HTTPClient http;
 
-#ifdef USE_AWS_FOR_OTA_UPDATE
+#ifdef USE_AWS_FOR_FIRMWARE_UPDATE
     // Ensure the URL uses HTTPS for secure download
     if (strncmp(firmwareUrl, "https://", 8) == 0)
     {
@@ -31,17 +31,18 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
         return;
     }
 #else
-    // Use non-secure HTTP for OTA updates
+    // Use non-secure HTTP
     http.begin(firmwareUrl);
 #endif
 
     // Start the HTTP request
     int httpCode = http.GET();
 
+    // Check the HTTP response code
     if (httpCode != HTTP_CODE_OK)
     {
-        String message = "Firmware update failed. HTTP error: " + http.errorToString(httpCode);
-        publishResult(false, message.c_str());
+        String details = "HTTP error: " + http.errorToString(httpCode);
+        publishResult(false, details.c_str());
         http.end();
         return;
     }
@@ -50,7 +51,8 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
     int contentLength = http.getSize();
     if (contentLength <= 0)
     {
-        publishResult(false, "Invalid content length");
+        String details = "Invalid content length: " + String(contentLength);
+        publishResult(false, details.c_str());
         http.end();
         return;
     }
@@ -58,12 +60,13 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
     // Prepare for update
     if (!Update.begin(contentLength))
     {
-        publishResult(false, "Firmware update failed to begin");
+        String details = "Update.begin() failed with error: " + String(Update.errorString());
+        publishResult(false, details.c_str());
         http.end();
         return;
     }
 
-    Serial.println(F("Begining OTA update..."));
+    Serial.println(F("URL and content length validated. Starting update..."));
 
     // Create a buffer to hold the firmware data
     WiFiClient *stream = http.getStreamPtr();
@@ -76,7 +79,9 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
     {
         if (Update.write(buffer, bytesRead) != bytesRead)
         {
-            publishResult(false, "Firmware update failed to write data");
+            String details = "Update.write() != bytesRead. Written: " + String(written) +
+                             ", Read: " + String(bytesRead);
+            publishResult(false, details.c_str());
             Update.end(false); // Abort the update
             http.end();
             return;
@@ -88,9 +93,9 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
     // Verify that we have written the exact amount of data
     if (written != (size_t)contentLength)
     {
-        String message = "Mismatch in written bytes. Expected: " + String(contentLength) +
+        String details = "Mismatch in written bytes. Expected: " + String(contentLength) +
                          ", Written: " + String(written);
-        publishResult(false, message.c_str());
+        publishResult(false, details.c_str());
         Update.end(false); // Abort the update
         http.end();
         return;
@@ -104,17 +109,17 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
     {
         if (Update.isFinished())
         {
-            publishResult(true, "OTA update successfully completed. Rebooting...");
+            publishResult(true, "Rebooting...");
             ESP.restart(); // Reboot to apply the new firmware
         }
         else
         {
-            publishResult(false, "OTA update failed to complete. Something went wrong!");
+            publishResult(false, "Update.isFinished() returned false");
         }
     }
     else
     {
-        String message = "Error occurred during firmware update. Error #: " + String(Update.getError());
-        publishResult(false, message.c_str());
+        String details = "Update.end() failed with error: " + String(Update.errorString());
+        publishResult(false, details.c_str());
     }
 }

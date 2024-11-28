@@ -231,22 +231,18 @@ void handleLedsCommand(JsonDocument &doc)
 }
 
 /**
- * @brief Publishes the OTA update status to the AWS IoT topic.
+ * @brief Publishes a message indicating the start of a firmware update.
  *
- * This function publishes a JSON message containing the OTA update status,
- * including whether the update was successful, a message, and a timestamp.
- * The message is published to the MQTT topic defined by MQTT_PUB_TOPIC_UPDATE_STATUS.
- *
- * @param success A boolean indicating whether the OTA update was successful.
- * @param message A C-string containing a message describing the update status.
+ * @param firmwareUrl The URL from which the firmware update will be downloaded.
  */
-void publishOTAUpdateStatus(bool success, const char *message)
+void publishFirmwareUpdateStart(const char *firmwareUrl)
 {
-    Serial.printf("OTA update result: %s. Message: %s\n", success ? "Success" : "Failed", message);
+    String statusMessage = "Starting firmware update from: " + String(firmwareUrl);
+    Serial.println(statusMessage);
 
     if (!client.connected())
     {
-        Serial.println(F("Cannot publish update status: AWS IoT client not connected"));
+        Serial.println(F("Cannot publish firmware update start: AWS IoT client not connected"));
         return;
     }
 
@@ -254,24 +250,54 @@ void publishOTAUpdateStatus(bool success, const char *message)
     JsonDocument doc;
 
     // Populate the JSON document with the update status
-    doc["success"] = success;
-    doc["message"] = message;
-    doc["timestamp"] = millis() / 1000;
+    doc["status"] = "in_progress";
+    doc["message"] = statusMessage;
 
     // Convert JSON document to string
-    char buffer[256];
+    char buffer[128];
     size_t n = serializeJson(doc, buffer);
 
-    // Publish the update status message
-    if (client.publish(MQTT_PUB_TOPIC_UPDATE_STATUS, buffer))
+    // Publish the update status message and print error if failed
+    if (!client.publish(MQTT_PUB_TOPIC_UPDATE_STATUS, buffer))
     {
-        // Optionally print the status message to the Serial monitor
-        Serial.printf("Update status published to topic: %s\n", MQTT_PUB_TOPIC_UPDATE_STATUS);
-        Serial.printf("Status size: %d bytes, JSON: %s\n", n, buffer);
+        Serial.println(F("Failed to publish update start message"));
     }
-    else
+}
+
+/**
+ * @brief Publishes the firmware update result to the AWS IoT topic.
+ *
+ * @param success A boolean indicating whether the firmware update was successful.
+ * @param message A C-string containing a message describing the update result.
+ */
+void publishFirmwareUpdateResult(bool success, const char *message)
+{
+    // Construct the status message
+    char statusMessage[128];
+    snprintf(statusMessage, sizeof(statusMessage), "Firmware update %s. %s", success ? "successful" : "failed", message);
+    Serial.println(statusMessage);
+
+    if (!client.connected())
     {
-        Serial.println(F("Failed to publish update status"));
+        Serial.println(F("Cannot publish firmware update result: AWS IoT client not connected"));
+        return;
+    }
+
+    // Allocate the JSON document
+    JsonDocument doc;
+
+    // Populate the JSON document with the update result
+    doc["status"] = success ? "success" : "failure";
+    doc["message"] = statusMessage;
+
+    // Convert JSON document to string
+    char buffer[128];
+    size_t n = serializeJson(doc, buffer);
+
+    // Publish the update result message and print error if failed
+    if (!client.publish(MQTT_PUB_TOPIC_UPDATE_STATUS, buffer))
+    {
+        Serial.println(F("Failed to publish update result"));
     }
 }
 
@@ -285,13 +311,14 @@ void handleUpdateCommand(JsonDocument &doc)
 
     if (firmwareUrl && strlen(firmwareUrl) > 0)
     {
-        Serial.printf("Received firmware update URL: %s\n", firmwareUrl);
+        // Publish the start of the firmware update
+        publishFirmwareUpdateStart(firmwareUrl);
 
         // Perform the firmware update
-        performFirmwareUpdate(firmwareUrl, publishOTAUpdateStatus);
+        performFirmwareUpdate(firmwareUrl, publishFirmwareUpdateResult);
     }
     else
     {
-        publishOTAUpdateStatus(false, "Invalid update command received. No '" FIRMWARE_URL_KEY "' key found");
+        publishFirmwareUpdateResult(false, "Invalid update command received: no '" FIRMWARE_URL_KEY "' key found");
     }
 }
