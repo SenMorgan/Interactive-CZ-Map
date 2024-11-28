@@ -2,7 +2,7 @@
 #include <WiFiClientSecure.h>
 #include "aws_iot.h"
 #include "constants.h"
-#include "leds.h"
+#include "leds_parser.h"
 #include "software_update.h"
 
 // Interval for publishing device status (in milliseconds)
@@ -11,6 +11,8 @@
 #define RECONNECT_INITIAL_DELAY 100
 // Maximum delay between reconnection attempts to AWS IoT (in milliseconds)
 #define RECONNECT_MAX_DELAY     30000
+// MQTT buffer size for handling larger messages
+#define MQTT_BUFFER_SIZE        8192
 
 // Initialize Wi-Fi and MQTT client
 WiFiClientSecure net;
@@ -23,7 +25,6 @@ uint32_t lastPublishTime = 0; // Last time the device status was published
 void connectToAWS();
 void publishStatus();
 void messageHandler(char *topic, byte *payload, unsigned int length);
-void handleLedsCommand(JsonDocument &doc);
 void handleUpdateCommand(JsonDocument &doc);
 
 /**
@@ -47,6 +48,9 @@ void initAWS()
 
     // Connect to the MQTT broker on the AWS endpoint with default port
     client.setServer(AWS_IOT_ENDPOINT, 8883);
+
+    // Increase the MQTT buffer size
+    client.setBufferSize(MQTT_BUFFER_SIZE);
 
     // Set the message callback function
     client.setCallback(messageHandler);
@@ -251,13 +255,16 @@ void publishFirmwareUpdateResult(bool success, const char *message)
  */
 void messageHandler(char *topic, byte *payload, unsigned int length)
 {
-    Serial.printf("IoT message arrived. Topic: %s. Message: %.*s\n", topic, length, payload);
+#define MAX_PRINTABLE_LENGTH 128 // Maximum length of payload to print
+
+    Serial.printf("IoT message arrived. Topic: %s. Size: %u bytes. Payload: %.*s\n",
+                  topic, length, length > MAX_PRINTABLE_LENGTH ? MAX_PRINTABLE_LENGTH : length, payload);
 
     // Allocate the JSON document
     JsonDocument doc;
 
     // Parse the JSON document and check for errors
-    DeserializationError error = deserializeJson(doc, payload);
+    DeserializationError error = deserializeJson(doc, payload, length);
     if (error)
     {
         Serial.printf("deserializeJson() failed: %s\n", error.c_str());
@@ -266,36 +273,11 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
 
     // Dispatch to appropriate handler based on topic
     if (strcmp(topic, MQTT_SUB_TOPIC_LEDS) == 0)
-        handleLedsCommand(doc);
+        setLedsFromJsonDoc(doc);
     else if (strcmp(topic, MQTT_SUB_TOPIC_UPDATE) == 0)
         handleUpdateCommand(doc);
     else
         Serial.printf("Unknown topic received: %s\n", topic);
-}
-
-// Handler for LED commands
-void handleLedsCommand(JsonDocument &doc)
-{
-    // Extract the LED index
-    int index = doc["index"];
-    // Extract the LED brightness
-    int brightness = doc["brightness"];
-    // Extract count of LED blinks
-    int blinks = doc["blinks"];
-    // Extract the delay between blinks in ms
-    int delayTime = doc["delay"];
-    // Extract the LED color
-    int r = doc["color"][0];
-    int g = doc["color"][1];
-    int b = doc["color"][2];
-
-    // TODO: Iterate over the array JsonArray leds = doc.as<JsonArray>(); for (JsonVariant led : leds) {}
-
-    // Update the LED
-    setLed(index, brightness, delayTime, blinks, CRGB(r, g, b));
-
-    Serial.printf("LED Command - Index: %d, Brightness: %d, Blinks: %d, Delay: %d, Color: (%d, %d, %d)\n",
-                  index, brightness, blinks, delayTime, r, g, b);
 }
 
 /**
