@@ -71,27 +71,37 @@ void initAWS()
 void connectToAWS()
 {
     static uint32_t reconnectDelay = RECONNECT_INITIAL_DELAY;
+    static uint32_t lastReconnectAttempt = 0;
 
     // Attempt to connect to AWS IoT indefinitely
-    while (!client.connect(THINGNAME))
+    if (!client.connect(THINGNAME))
     {
-        // Connection failed - retry after delay
-        Serial.printf("Connection to AWS IoT failed, rc=%d\n", client.state());
-        Serial.printf("Retrying in %lu ms\n", reconnectDelay);
-        delay(reconnectDelay);
+        uint32_t timeNow = millis();
+        // Check if the last reconnection attempt was too soon
+        if (timeNow - lastReconnectAttempt >= reconnectDelay)
+        {
+            // Connection failed - retry after delay
+            Serial.printf("Connection to AWS IoT failed, rc=%d\n", client.state());
+            Serial.printf("Retrying in %lu ms\n", reconnectDelay);
 
-        // Exponential backoff with a limit
-        if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
-            reconnectDelay *= 2;
-        else
-            reconnectDelay = RECONNECT_MAX_DELAY;
+            // Exponential backoff with a limit
+            if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
+                reconnectDelay *= 2;
+            else
+                reconnectDelay = RECONNECT_MAX_DELAY;
+
+            // Update the last reconnection attempt time
+            lastReconnectAttempt = timeNow;
+        }
     }
-
-    // Connection successful
-    Serial.println(F("Connected to AWS IoT"));
-    reconnectDelay = RECONNECT_INITIAL_DELAY;      // Reset reconnect delay
-    client.subscribe(MQTT_SUB_TOPIC_ALL_COMMANDS); // Subscribe to all commands
-    publishStatus();                               // Publish the device status
+    else
+    {
+        // Connection successful
+        Serial.println(F("Connected to AWS IoT"));
+        reconnectDelay = RECONNECT_INITIAL_DELAY;      // Reset reconnect delay
+        client.subscribe(MQTT_SUB_TOPIC_ALL_COMMANDS); // Subscribe to all commands
+        publishStatus();                               // Publish the device status
+    }
 }
 
 /**
