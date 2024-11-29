@@ -1,5 +1,6 @@
 #include <LittleFS.h>
 #include <WiFiMulti.h>
+#include "custom_html.h"
 #include "wifi_manager.h"
 
 // Configure DoubleResetDetector to use LittleFS
@@ -217,10 +218,11 @@ void initWiFiManager()
     AsyncDNSServer dnsServer;
     ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, HOSTNAME);
 
-    ESPAsync_wifiManager.setMinimumSignalQuality(-1);
-
     // Set config portal channel, default = 1. Use 0 => random channel from 1-11
     ESPAsync_wifiManager.setConfigPortalChannel(0);
+
+    // Add custom styles
+    ESPAsync_wifiManager.setCustomHeadElement(CUSTOM_HEAD_ELEMENT);
 
     // We can't use WiFi.SSID() in ESP32 as it's only valid after connected.
     // SSID and Password stored in ESP32 wifi_ap_record_t and wifi_config_t are also cleared in reboot
