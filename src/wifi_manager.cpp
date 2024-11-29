@@ -1,159 +1,226 @@
-/****************************************************************************************************************************
-  Async_ConfigOnDoubleReset_Multi.ino
-  For ESP8266 / ESP32 boards
+#include <LittleFS.h>
+#include <WiFiMulti.h>
+#include "wifi_manager.h"
 
-  ESPAsync_WiFiManager is a library for the ESP8266/Arduino platform, using (ESP)AsyncWebServer to enable easy
-  configuration and reconfiguration of WiFi credentials using a Captive Portal.
+// Configure DoubleResetDetector to use LittleFS
+#define ESP_DRD_USE_LITTLEFS true
+#include <ESP_DoubleResetDetector.h> //https://github.com/khoih-prog/ESP_DoubleResetDetector
 
-  Modified from
-  1. Tzapu               (https://github.com/tzapu/WiFiManager)
-  2. Ken Taylor          (https://github.com/kentaylor)
-  3. Alan Steremberg     (https://github.com/alanswx/ESPAsyncWiFiManager)
-  4. Khoi Hoang          (https://github.com/khoih-prog/ESP_WiFiManager)
-
-  Built by Khoi Hoang https://github.com/khoih-prog/ESPAsync_WiFiManager
-  Licensed under MIT license
- *****************************************************************************************************************************/
-/****************************************************************************************************************************
-   This example will open a configuration portal when the reset button is pressed twice.
-   This method works well on Wemos boards which have a single reset button on board. It avoids using a pin for launching the configuration portal.
-
-   How It Works
-   1) ESP8266
-   Save data in RTC memory
-   2) ESP32
-   Save data in EEPROM from address 256, size 512 bytes (both configurable)
-
-   So when the device starts up it checks this region of ram for a flag to see if it has been recently reset.
-   If so it launches a configuration portal, if not it sets the reset flag. After running for a while this flag is cleared so that
-   it will only launch the configuration portal in response to closely spaced resets.
-
-   Settings
-   There are two values to be set in the sketch.
-
-   DRD_TIMEOUT - Number of seconds to wait for the second reset. Set to 10 in the example.
-   DRD_ADDRESS - The address in ESP8266 RTC RAM to store the flag. This memory must not be used for other purposes in the same sketch. Set to 0 in the example.
-
-   This example, originally relied on the Double Reset Detector library from https://github.com/datacute/DoubleResetDetector
-   To support ESP32, use ESP_DoubleResetDetector library from //https://github.com/khoih-prog/ESP_DoubleResetDetector
- *****************************************************************************************************************************/
-
-// These definitions must be placed before #include <ESPAsync_WiFiManager.h>
-#include "Async_ConfigOnDoubleReset_Multi.h"
-
+// Configure AsyncWiFiManager
+#define USE_AVAILABLE_PAGES        true
+#define USE_ESP_WIFIMANAGER_NTP    false
+#define USE_STATIC_IP_CONFIG_IN_CP false
 #include <ESPAsync_WiFiManager.h> //https://github.com/khoih-prog/ESPAsync_WiFiManager
 
-// Redundant, for v1.10.0 only
-// #include <ESPAsync_WiFiManager-Impl.h>          //https://github.com/khoih-prog/ESPAsync_WiFiManager
+// Number of seconds after reset during which a subseqent reset will be considered a double reset.
+#define DRD_TIMEOUT 10
 
-void initWiFiManager()
+#define CONFIG_FILENAME F("/wifi_cred.dat")
+
+#define MIN_AP_PASSWORD_SIZE 8
+
+#define SSID_MAX_LEN 32
+#define PASS_MAX_LEN 64 // WPA2 passwords can be up to 63 characters long + null
+
+#define HTTP_PORT            80
+#define NUM_WIFI_CREDENTIALS 2
+
+#define WIFI_MULTI_1ST_CONNECT_WAITING_MS 800L
+#define WIFI_MULTI_CONNECT_WAITING_MS     500L
+
+#define WIFI_CHECK_INTERVAL 1000L
+
+typedef struct
 {
-    // put your setup code here, to run once:
-    // initialize the LED digital pin as an output.
-    pinMode(PIN_LED, OUTPUT);
+    char wifi_ssid[SSID_MAX_LEN];
+    char wifi_pw[PASS_MAX_LEN];
+} WiFi_Credentials;
 
-    Serial.print(F("\nStarting Async_ConfigOnDoubleReset_Multi using "));
-    Serial.print(FS_Name);
-    Serial.print(F(" on "));
-    Serial.println(ARDUINO_BOARD);
-    Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION);
-    Serial.println(ESP_DOUBLE_RESET_DETECTOR_VERSION);
+typedef struct
+{
+    String wifi_ssid;
+    String wifi_pw;
+} WiFi_Credentials_String;
 
-#if defined(ESP_ASYNC_WIFIMANAGER_VERSION_INT)
+typedef struct
+{
+    WiFi_Credentials WiFi_Creds[NUM_WIFI_CREDENTIALS];
+    uint16_t checksum;
+} WM_Config;
 
-    if (ESP_ASYNC_WIFIMANAGER_VERSION_INT < ESP_ASYNC_WIFIMANAGER_VERSION_MIN)
+WM_Config WM_config;
+
+DoubleResetDetector drd(DRD_TIMEOUT, 0);
+WiFiMulti wifiMulti;
+FS *filesystem;
+
+// SSID and PW for Config Portal
+String ssid = "ESP_" + String(ESP_getChipId(), HEX);
+String password;
+// extern const char* password;    // = "your_password";
+
+// SSID and PW for your Router
+String Router_SSID;
+String Router_Pass;
+
+// Indicates whether ESP has WiFi credentials saved from previous session, or double reset detected
+bool initialConfig; // = false;
+
+uint8_t connectMultiWiFi()
+{
+    uint8_t status;
+
+    LOGERROR(F("ConnectMultiWiFi with :"));
+
+    if ((Router_SSID != "") && (Router_Pass != ""))
     {
-        Serial.print("Warning. Must use this example on Version later than : ");
-        Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION_MIN_TARGET);
+        LOGERROR3(F("* Flash-stored Router_SSID = "), Router_SSID, F(", Router_Pass = "), Router_Pass);
+        LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
+        wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
     }
 
-#endif
-
-    Serial.setDebugOutput(false);
-
-    if (FORMAT_FILESYSTEM)
-        FileFS.format();
-
-        // Format FileFS if not yet
-#ifdef ESP32
-
-    if (!FileFS.begin(true))
-#else
-    if (!FileFS.begin())
-#endif
+    for (uint8_t i = 0; i < NUM_WIFI_CREDENTIALS; i++)
     {
-#ifdef ESP8266
-        FileFS.format();
-#endif
-
-        Serial.println(F("SPIFFS/LittleFS failed! Already tried formatting."));
-
-        if (!FileFS.begin())
+        // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
+        if ((String(WM_config.WiFi_Creds[i].wifi_ssid) != "") && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE))
         {
-            // prevents debug info from the library to hide err message.
-            delay(100);
-
-#if USE_LITTLEFS
-            Serial.println(F("LittleFS failed!. Please use SPIFFS or EEPROM. Stay forever"));
-#else
-            Serial.println(F("SPIFFS failed!. Please use LittleFS or EEPROM. Stay forever"));
-#endif
-
-            while (true)
-            {
-                delay(1);
-            }
+            LOGERROR3(F("* Additional SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw);
         }
     }
 
-    drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
+    LOGERROR(F("Connecting MultiWifi..."));
+
+    int i = 0;
+
+    status = wifiMulti.run();
+    delay(WIFI_MULTI_1ST_CONNECT_WAITING_MS);
+
+    while ((i++ < 20) && (status != WL_CONNECTED))
+    {
+        status = WiFi.status();
+
+        if (status == WL_CONNECTED)
+            break;
+        else
+            delay(WIFI_MULTI_CONNECT_WAITING_MS);
+    }
+
+    if (status == WL_CONNECTED)
+    {
+        LOGERROR1(F("WiFi connected after time: "), i);
+        LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
+        LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
+    }
+    else
+    {
+        LOGERROR(F("WiFi not connected"));
+
+        // To avoid unnecessary DRD
+        drd.loop();
+
+        // Restart after unsuccessful connection
+        ESP.restart();
+    }
+
+    return status;
+}
+
+int calcChecksum(uint8_t *address, uint16_t sizeToCalc)
+{
+    uint16_t checkSum = 0;
+
+    for (uint16_t index = 0; index < sizeToCalc; index++)
+    {
+        checkSum += *(((byte *)address) + index);
+    }
+
+    return checkSum;
+}
+
+bool loadConfigData()
+{
+    File file = LittleFS.open(CONFIG_FILENAME, "r");
+    LOGERROR(F("LoadWiFiCfgFile "));
+
+    memset((void *)&WM_config, 0, sizeof(WM_config));
+
+    if (file)
+    {
+        file.readBytes((char *)&WM_config, sizeof(WM_config));
+
+        file.close();
+        LOGERROR(F("OK"));
+
+        if (WM_config.checksum != calcChecksum((uint8_t *)&WM_config, sizeof(WM_config) - sizeof(WM_config.checksum)))
+        {
+            LOGERROR(F("WM_config checksum wrong"));
+
+            return false;
+        }
+
+        return true;
+    }
+    else
+    {
+        LOGERROR(F("failed"));
+
+        return false;
+    }
+}
+
+void saveConfigData()
+{
+    File file = LittleFS.open(CONFIG_FILENAME, "w");
+    LOGERROR(F("SaveWiFiCfgFile "));
+
+    if (file)
+    {
+        WM_config.checksum = calcChecksum((uint8_t *)&WM_config, sizeof(WM_config) - sizeof(WM_config.checksum));
+
+        file.write((uint8_t *)&WM_config, sizeof(WM_config));
+
+        file.close();
+        LOGERROR(F("OK"));
+    }
+    else
+    {
+        LOGERROR(F("failed"));
+    }
+}
+
+/**
+ * @brief Initializes the WiFi Manager and sets up the WiFi connection.
+ */
+void initWiFiManager()
+{
+    Serial.print(F("Initializing WiFi Manager..."));
+
+    // Format LittleFS on fail
+    if (!LittleFS.begin(true))
+    {
+        Serial.println(F("Initializing LittleFS failed! Already tried formatting."));
+
+        if (!LittleFS.begin())
+        {
+            Serial.println(F("Initializing LittleFS failed!. Please use SPIFFS or EEPROM. Stay forever..."));
+
+            while (true)
+                delay(1);
+        }
+    }
+
+    Serial.println(F("LittleFS initialized"));
 
     unsigned long startedAt = millis();
 
-    // New in v1.4.0
-    initAPIPConfigStruct(WM_AP_IPconfig);
-    initSTAIPConfigStruct(WM_STA_IPconfig);
-    //////
-
-    // Local intialization. Once its business is done, there is no need to keep it around
-    //  Use this to default DHCP hostname to ESP8266-XXXXXX or ESP32-XXXXXX
-    // ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer);
-    //  Use this to personalize DHCP hostname (RFC952 conformed)
     AsyncWebServer webServer(HTTP_PORT);
-
-#if (USING_ESP32_S2 || USING_ESP32_C3)
-    ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, NULL, "AsyncConfigOnDoubleReset");
-#else
     AsyncDNSServer dnsServer;
-
-    ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "AsyncConfigOnDoubleReset");
-#endif
-
-#if USE_CUSTOM_AP_IP
-    // set custom ip for portal
-    //  New in v1.4.0
-    ESPAsync_wifiManager.setAPStaticIPConfig(WM_AP_IPconfig);
-    //////
-#endif
+    ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, HOSTNAME);
 
     ESPAsync_wifiManager.setMinimumSignalQuality(-1);
 
-    // From v1.0.10 only
     // Set config portal channel, default = 1. Use 0 => random channel from 1-11
     ESPAsync_wifiManager.setConfigPortalChannel(0);
-    //////
-
-#if !USE_DHCP_IP
-    // Set (static IP, Gateway, Subnetmask, DNS1 and DNS2) or (IP, Gateway, Subnetmask). New in v1.0.5
-    // New in v1.4.0
-    ESPAsync_wifiManager.setSTAStaticIPConfig(WM_STA_IPconfig);
-    //////
-#endif
-
-    // New from v1.1.1
-#if USING_CORS_FEATURE
-    ESPAsync_wifiManager.setCORSHeader("Your Access-Control-Allow-Origin");
-#endif
 
     // We can't use WiFi.SSID() in ESP32 as it's only valid after connected.
     // SSID and Password stored in ESP32 wifi_ap_record_t and wifi_config_t are also cleared in reboot
@@ -170,7 +237,7 @@ void initWiFiManager()
 
     bool configDataLoaded = false;
 
-    // From v1.1.0, Don't permit NULL password
+    // Don't permit NULL password
     if ((Router_SSID != "") && (Router_Pass != ""))
     {
         LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
@@ -186,26 +253,6 @@ void initWiFiManager()
 
         ESPAsync_wifiManager.setConfigPortalTimeout(120); // If no access point name has been previously entered disable timeout.
         Serial.println(F("Got stored Credentials. Timeout 120s for Config Portal"));
-
-#if USE_ESP_WIFIMANAGER_NTP
-
-        if (strlen(WM_config.TZ_Name) > 0)
-        {
-            LOGERROR3(F("Current TZ_Name ="), WM_config.TZ_Name, F(", TZ = "), WM_config.TZ);
-
-#if ESP8266
-            configTime(WM_config.TZ, "pool.ntp.org");
-#else
-            // configTzTime(WM_config.TZ, "pool.ntp.org" );
-            configTzTime(WM_config.TZ, "time.nist.gov", "0.pool.ntp.org", "1.pool.ntp.org");
-#endif
-        }
-        else
-        {
-            Serial.println(F("Current Timezone is not set. Enter Config Portal to set."));
-        }
-
-#endif
     }
     else
     {
@@ -214,7 +261,7 @@ void initWiFiManager()
         initialConfig = true;
     }
 
-    if (drd->detectDoubleReset())
+    if (drd.detectDoubleReset())
     {
         // DRD, disable timeout.
         ESPAsync_wifiManager.setConfigPortalTimeout(0);
@@ -225,33 +272,13 @@ void initWiFiManager()
 
     if (initialConfig)
     {
-        Serial.print(F("Starting configuration portal @ "));
+        Serial.printf("Starting Config Portal on 192.168.4.1 with SSID = %s, PWD = %s\n", ssid.c_str(), password.c_str());
 
-#if USE_CUSTOM_AP_IP
-        Serial.print(APStaticIP);
-#else
-        Serial.print(F("192.168.4.1"));
-#endif
-
-        Serial.print(F(", SSID = "));
-        Serial.print(ssid);
-        Serial.print(F(", PWD = "));
-        Serial.println(password);
-
-        digitalWrite(PIN_LED, LED_ON); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
-
-        // sets timeout in seconds until configuration portal gets turned off.
-        // If not specified device will remain in configuration mode until
-        // switched off via webserver or device is restarted.
-        // ESPAsync_wifiManager.setConfigPortalTimeout(600);
-
-#if DISPLAY_STORED_CREDENTIALS_IN_CP
         // New. Update Credentials, got from loadConfigData(), to display on CP
         ESPAsync_wifiManager.setCredentials(WM_config.WiFi_Creds[0].wifi_ssid, WM_config.WiFi_Creds[0].wifi_pw,
                                             WM_config.WiFi_Creds[1].wifi_ssid, WM_config.WiFi_Creds[1].wifi_pw);
-#endif
 
-        // Starts an access point
+        // Blocking loop waiting to enter Config Portal and update WiFi Credentials
         if (!ESPAsync_wifiManager.startConfigPortal((const char *)ssid.c_str(), password.c_str()))
             Serial.println(F("Not connected to WiFi but continuing anyway."));
         else
@@ -259,7 +286,7 @@ void initWiFiManager()
             Serial.println(F("WiFi connected...yeey :)"));
         }
 
-        // Stored  for later usage, from v1.1.0, but clear first
+        // Clear WiFI credentials from memory
         memset(&WM_config, 0, sizeof(WM_config));
 
         for (uint8_t i = 0; i < NUM_WIFI_CREDENTIALS; i++)
@@ -285,47 +312,9 @@ void initWiFiManager()
             }
         }
 
-#if USE_ESP_WIFIMANAGER_NTP
-        String tempTZ = ESPAsync_wifiManager.getTimezoneName();
-
-        if (strlen(tempTZ.c_str()) < sizeof(WM_config.TZ_Name) - 1)
-            strcpy(WM_config.TZ_Name, tempTZ.c_str());
-        else
-            strncpy(WM_config.TZ_Name, tempTZ.c_str(), sizeof(WM_config.TZ_Name) - 1);
-
-        const char *TZ_Result = ESPAsync_wifiManager.getTZ(WM_config.TZ_Name);
-
-        if (strlen(TZ_Result) < sizeof(WM_config.TZ) - 1)
-            strcpy(WM_config.TZ, TZ_Result);
-        else
-            strncpy(WM_config.TZ, TZ_Result, sizeof(WM_config.TZ_Name) - 1);
-
-        if (strlen(WM_config.TZ_Name) > 0)
-        {
-            LOGERROR3(F("Saving current TZ_Name ="), WM_config.TZ_Name, F(", TZ = "), WM_config.TZ);
-
-#if ESP8266
-            configTime(WM_config.TZ, "pool.ntp.org");
-#else
-            // configTzTime(WM_config.TZ, "pool.ntp.org" );
-            configTzTime(WM_config.TZ, "time.nist.gov", "0.pool.ntp.org", "1.pool.ntp.org");
-#endif
-        }
-        else
-        {
-            LOGERROR(F("Current Timezone Name is not set. Enter Config Portal to set."));
-        }
-
-#endif
-
-        // New in v1.4.0
-        ESPAsync_wifiManager.getSTAStaticIPConfig(WM_STA_IPconfig);
-        //////
-
+        // Save updated Credentials to memory
         saveConfigData();
     }
-
-    digitalWrite(PIN_LED, LED_OFF); // Turn led off as we are not in configuration mode.
 
     startedAt = millis();
 
@@ -335,6 +324,7 @@ void initWiFiManager()
         if (!configDataLoaded)
             loadConfigData();
 
+        // Loop through WiFi creds and add them to WiFiMulti
         for (uint8_t i = 0; i < NUM_WIFI_CREDENTIALS; i++)
         {
             // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
@@ -366,14 +356,31 @@ void initWiFiManager()
         Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
 }
 
+/**
+ * @brief Handles WiFi connection status and attempts reconnection if disconnected.
+ *
+ * This function checks the WiFi connection status at regular intervals defined by WIFI_CHECK_INTERVAL.
+ * If the WiFi is disconnected, it attempts to reconnect.
+ * It also updates the double reset detector loop to recognize when the timeout expires or a reset is detected.
+ *
+ * @note This function should be called periodically within the main loop to ensure continuous WiFi connectivity.
+ */
 void handleWiFi()
 {
-    // Call the double reset detector loop method every so often,
-    // so that it can recognise when the timeout expires.
-    // You can also call drd.stop() when you wish to no longer
-    // consider the next reset as a double reset.
-    drd->loop();
+    static uint32_t lastWiFiCheck = 0;
+    uint32_t timeNow = millis();
 
-    // put your main code here, to run repeatedly
-    check_status();
+    // Update the double reset detector loop to recognise when the timeout expires or reset is detected
+    drd.loop();
+
+    // Check WiFi every WIFI_CHECK_INTERVAL seconds.
+    if (timeNow - lastWiFiCheck > WIFI_CHECK_INTERVAL)
+    {
+        if ((WiFi.status() != WL_CONNECTED))
+        {
+            Serial.println(F("\nWiFi lost. Call connectMultiWiFi in loop"));
+            connectMultiWiFi();
+        }
+        lastWiFiCheck = timeNow;
+    }
 }
