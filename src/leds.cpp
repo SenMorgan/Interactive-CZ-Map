@@ -2,6 +2,12 @@
 #include "leds.h"
 #include "constants.h"
 
+// Task parameters
+#define LEDS_TASK_FREQUENCY_HZ (100U)
+#define LEDS_TASK_STACK_SIZE   (2 * 1024U)
+#define LEDS_TASK_PRIORITY     (tskIDLE_PRIORITY + 1)
+#define LEDS_TASK_CORE         1 // Core 0 is used by the WiFi
+
 // Initialize array with number of LEDs
 CRGB leds[LEDS_COUNT];
 
@@ -18,26 +24,6 @@ struct LedState
 
 // Array to hold the state of all LEDs
 LedState ledStates[LEDS_COUNT];
-
-/**
- * @brief Initializes the LED strip and sets all LEDs to off.
- */
-void initLeds()
-{
-    // Initialize LED strip
-    FastLED.addLeds<WS2812B, LEDS_PIN, GRB>(leds, LEDS_COUNT);
-
-    // Set all LEDs to off
-    for (int i = 0; i < LEDS_COUNT; i++)
-    {
-        leds[i] = CRGB::Black;
-        ledStates[i] = LedState();
-    }
-    FastLED.show();
-
-    // Blink with one LED to indicate the start
-    setLed(63, 255, 200, 10, CRGB::Green);
-}
 
 /**
  * @brief Sets the state of an LED at a specified index. If any of the parameters are out of bounds,
@@ -124,7 +110,8 @@ void refreshLeds()
                 // The fade effect has completed for this cycle. Decrease the repeat count and reset flag.
                 leds[i] = CRGB::Black;
                 state.fadeCycles--;
-                if (state.fadeCycles < 0) state.fadeCycles = 0;
+                if (state.fadeCycles < 0)
+                    state.fadeCycles = 0;
                 state.isFading = false;
             }
         }
@@ -140,4 +127,66 @@ void refreshLeds()
 
     // Update the LED strip after all calculations
     FastLED.show();
+}
+
+/**
+ * @brief Task to manage LED strip updates.
+ *
+ * This task initializes the LED strip, sets all LEDs to off, and then enters a loop
+ * where it updates the LED states at a fixed frequency. The task also blinks one LED
+ * to indicate the start of the task.
+ *
+ * @param pvParameters Pointer to the parameters passed to the task (not used).
+ */
+void ledsTask(void *pvParameters)
+{
+    const TickType_t xFrequency = pdMS_TO_TICKS(1000 / LEDS_TASK_FREQUENCY_HZ);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    // Initialize LED strip
+    FastLED.addLeds<WS2812B, LEDS_PIN, GRB>(leds, LEDS_COUNT);
+
+    // Set all LEDs to off
+    for (int i = 0; i < LEDS_COUNT; i++)
+    {
+        leds[i] = CRGB::Black;
+        ledStates[i] = LedState();
+    }
+    FastLED.show();
+
+    // Blink with one LED to indicate the start
+    setLed(63, 255, 200, 10, CRGB::Green);
+
+    Serial.println("ledsTask started");
+
+    // Main task loop
+    for (;;)
+    {
+        // Update their states
+        refreshLeds();
+
+        // Wait for the next cycle.
+        xTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+/**
+ * @brief Initializes the leds task.
+ *
+ * This function creates a new task called "ledsTask" and assigns it to a specific core.
+ *
+ * @note This function should be called once during the setup phase of the program.
+ */
+void ledsTaskInit(void)
+{
+    if (pdPASS != xTaskCreatePinnedToCore(ledsTask,
+                                          "ledsTask",
+                                          LEDS_TASK_STACK_SIZE,
+                                          NULL,
+                                          LEDS_TASK_PRIORITY,
+                                          NULL,
+                                          LEDS_TASK_CORE))
+    {
+        Serial.println("Failed to create ledsTask");
+    }
 }

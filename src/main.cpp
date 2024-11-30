@@ -11,15 +11,14 @@ void setup()
         delay(10);
 
     // Initialize modules
+    ledsTaskInit();
     initWiFiManager();
     initAWS();
-    initLeds();
 }
 
 void loop()
 {
-    handleWiFi();
-    refreshLeds();           // Update the state of the LEDs
+    handleWiFi();            // Maintain WiFi connection
     maintainAWSConnection(); // Maintain the MQTT connection
     periodicStatusPublish(); // Publish the device status periodically
     yield();                 // Allow the ESP32 to perform background tasks

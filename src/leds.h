@@ -3,8 +3,7 @@
 
 #include <FastLED.h>
 
-void initLeds();
+void ledsTaskInit();
 void setLed(int index, int brightness, int fadeDuration, int fadeCycles, CRGB color);
-void refreshLeds();
 
 #endif // LEDS_H
