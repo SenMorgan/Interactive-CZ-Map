@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<!-- saved from url=(0021)http://192.168.4.1/i? -->
+<html lang="en">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Info</title>
+    <script>function c(l) { document.getElementById('s').value = l.innerText || l.textContent; document.getElementById('p').focus(); document.getElementById('s1').value = l.innerText || l.textContent; document.getElementById('p1').focus(); document.getElementById('timezone').value = timezone.name(); }</script>
+    <style>
+        div {
+            padding: 2px;
+            font-size: 1em;
+        }
+
+        body,
+        textarea,
+        input,
+        select {
+            background: 0;
+            border-radius: 0;
+            font: 16px sans-serif;
+            margin: 0
+        }
+
+        textarea,
+        input,
+        select {
+            outline: 0;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            padding: 8px;
+            width: 90%
+        }
+
+        .btn a {
+            text-decoration: none
+        }
+
+        .container {
+            margin: auto;
+            width: 90%
+        }
+
+        @media(min-width:1200px) {
+            .container {
+                margin: auto;
+                width: 30%
+            }
+        }
+
+        @media(min-width:768px) and (max-width:1200px) {
+            .container {
+                margin: auto;
+                width: 50%
+            }
+        }
+
+        .btn,
+        h2 {
+            font-size: 2em
+        }
+
+        h1 {
+            font-size: 3em
+        }
+
+        .btn {
+            background: #0ae;
+            border-radius: 4px;
+            border: 0;
+            color: #fff;
+            cursor: pointer;
+            display: inline-block;
+            margin: 2px 0;
+            padding: 10px 14px 11px;
+            width: 100%
+        }
+
+        .btn:hover {
+            background: #09d
+        }
+
+        .btn:active,
+        .btn:focus {
+            background: #08b
+        }
+
+        label>* {
+            display: inline
+        }
+
+        form>* {
+            display: block;
+            margin-bottom: 10px
+        }
+
+        textarea:focus,
+        input:focus,
+        select:focus {
+            border-color: #5ab
+        }
+
+        .msg {
+            background: #def;
+            border-left: 5px solid #59d;
+            padding: 1.5em
+        }
+
+        .q {
+            float: right;
+            width: 64px;
+            text-align: right
+        }
+
+        .l {
+            background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAALVBMVEX///8EBwfBwsLw8PAzNjaCg4NTVVUjJiZDRUUUFxdiZGSho6OSk5Pg4eFydHTCjaf3AAAAZElEQVQ4je2NSw7AIAhEBamKn97/uMXEGBvozkWb9C2Zx4xzWykBhFAeYp9gkLyZE0zIMno9n4g19hmdY39scwqVkOXaxph0ZCXQcqxSpgQpONa59wkRDOL93eAXvimwlbPbwwVAegLS1HGfZAAAAABJRU5ErkJggg==') no-repeat left center;
+            background-size: 1em
+        }
+
+        input[type='checkbox'] {
+            float: left;
+            width: 20px
+        }
+
+        .table td {
+            padding: .5em;
+            text-align: left
+        }
+
+        .table tbody>:nth-child(2n-1) {
+            background: #ddd
+        }
+
+        fieldset {
+            border-radius: 0.5rem;
+            margin: 0px;
+        }
+    </style>
+    <!-- Get another style from local file -->
+    <link rel="stylesheet" href="custom.css">
+</head>
+
+<body>
+    <div class="container">
+        <div style="text-align:left;display:inline-block;min-width:260px;">
+            <dl>
+                <h2>WiFi Information</h2>No network configured.<fieldset>
+                    <h3>Device Data</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Chip ID</td>
+                                <td>506b0</td>
+                            </tr>
+                            <tr>
+                                <td>Chip OUI</td>
+                                <td>0xa0a3b3</td>
+                            </tr>
+                            <tr>
+                                <td>Chip Model</td>
+                                <td>ESP32-D0WDQ5 Rev3</td>
+                            </tr>
+                            <tr>
+                                <td>Flash Chip ID</td>
+                                <td>TODO</td>
+                            </tr>
+                            <tr>
+                                <td>IDE Flash Size</td>
+                                <td>16777216 bytes</td>
+                            </tr>
+                            <tr>
+                                <td>Real Flash Size</td>
+                                <td>TODO bytes</td>
+                            </tr>
+                            <tr>
+                                <td>Access Point IP</td>
+                                <td>192.168.4.1</td>
+                            </tr>
+                            <tr>
+                                <td>Access Point MAC</td>
+                                <td>A0:A3:B3:05:06:B1</td>
+                            </tr>
+                            <tr>
+                                <td>SSID</td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td>Station IP</td>
+                                <td>0.0.0.0</td>
+                            </tr>
+                            <tr>
+                                <td>Station MAC</td>
+                                <td>A0:A3:B3:05:06:B0</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+                <fieldset>
+                    <h3>Available Pages</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Page</th>
+                                <th>Function</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><a href="http://192.168.4.1/">/</a></td>
+                                <td>Menu page.</td>
+                            </tr>
+                            <tr>
+                                <td><a href="http://192.168.4.1/wifi">/wifi</a></td>
+                                <td>Enter WiFi Config Page with scan results.</td>
+                            </tr>
+                            <tr>
+                                <td><a href="http://192.168.4.1/wifisave">/wifisave</a></td>
+                                <td>Save Config. Portal Info with supplied variables.</td>
+                            </tr>
+                            <tr>
+                                <td><a href="http://192.168.4.1/close">/close</a></td>
+                                <td>Close the Config Portal.</td>
+                            </tr>
+                            <tr>
+                                <td><a href="http://192.168.4.1/i">/i</a></td>
+                                <td>This Info page.</td>
+                            </tr>
+                            <tr>
+                                <td><a href="http://192.168.4.1/r">/r</a></td>
+                                <td>Delete WiFi configuration and reboot. ESP device will not reconnect to a network
+                                    until new WiFi configuration data is entered.</td>
+                            </tr>
+                            <tr>
+                                <td><a href="http://192.168.4.1/state">/state</a></td>
+                                <td>Current device state in JSON format. Interface for programmatic WiFi configuration.
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><a href="http://192.168.4.1/scan">/scan</a></td>
+                                <td>Run a WiFi scan and return results in JSON format. Interface for programmatic WiFi
+                                    configuration.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </fieldset>
+                <p>More information about ESPAsync_WiFiManager at</p>
+                <p><a
+                        href="https://github.com/khoih-prog/ESPAsync_WiFiManager">https://github.com/khoih-prog/ESPAsync_WiFiManager</a>
+                </p>
+            </dl>
+        </div>
+    </div>
+</body>
+
+</html>
