@@ -1,9 +1,12 @@
 #ifndef LEDS_H
 #define LEDS_H
 
-#include <FastLED.h>
+#include "crgb.h" // Include CRGB type from FastLED library for LED colors
+
+#define LOOP_INDEFINITELY -1 // Value of fadeCycles to loop indefinitely
 
 void ledsTaskInit();
-void setLed(int index, int brightness, int fadeDuration, int fadeCycles, CRGB color);
+void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color);
+void circleLedEffect(CRGB color);
 
 #endif // LEDS_H
