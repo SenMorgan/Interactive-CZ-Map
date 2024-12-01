@@ -8,12 +8,9 @@
 #include <LittleFS.h>
 #include <WiFiMulti.h>
 #include "custom_html.h"
+#include "drd.h"
 #include "leds.h"
 #include "wifi_manager.h"
-
-// Configure DoubleResetDetector to use LittleFS
-#define ESP_DRD_USE_LITTLEFS true
-#include <ESP_DoubleResetDetector.h> //https://github.com/khoih-prog/ESP_DoubleResetDetector
 
 // Configure AsyncWiFiManager
 #define USE_AVAILABLE_PAGES        true
@@ -21,8 +18,8 @@
 #define USE_STATIC_IP_CONFIG_IN_CP false
 #include <ESPAsync_WiFiManager.h> //https://github.com/khoih-prog/ESPAsync_WiFiManager
 
-// Number of seconds after reset during which a subseqent reset will be considered a double reset.
-#define DRD_TIMEOUT 10
+// Timeout for detecting double reset (used to manually enter Config Portal)
+#define DRD_TIMEOUT 5000
 
 #define CONFIG_FILENAME F("/wifi_cred.dat")
 
@@ -59,7 +56,6 @@ typedef struct
 
 WM_Config WM_config;
 
-DoubleResetDetector drd(DRD_TIMEOUT, 0);
 WiFiMulti wifiMulti;
 FS *filesystem;
 
@@ -124,9 +120,6 @@ void connectMultiWiFi()
     else
     {
         LOGERROR(F("WiFi not connected"));
-
-        // To avoid unnecessary DRD
-        drd.loop();
 
         // Restart after unsuccessful connection
         ESP.restart();
@@ -201,7 +194,10 @@ void saveConfigData()
  */
 void initWiFiManager()
 {
-    Serial.print(F("Initializing WiFi Manager..."));
+    Serial.println(F("Initializing WiFi Manager..."));
+
+    // Initialize Double Reset Detection for starting Config Portal if DRD
+    drdTaskInit(DRD_TIMEOUT);
 
     // Format LittleFS on fail
     if (!LittleFS.begin(true))
@@ -273,7 +269,7 @@ void initWiFiManager()
         initialConfig = true;
     }
 
-    if (drd.detectDoubleReset())
+    if (isDoubleResetDetected())
     {
         // DRD, disable timeout.
         ESPAsync_wifiManager.setConfigPortalTimeout(0);
@@ -391,9 +387,6 @@ void handleWiFi()
 {
     static uint32_t lastWiFiCheck = 0;
     uint32_t timeNow = millis();
-
-    // Update the double reset detector loop to recognise when the timeout expires or reset is detected
-    drd.loop();
 
     // Check WiFi every WIFI_CHECK_INTERVAL seconds.
     if (timeNow - lastWiFiCheck > WIFI_CHECK_INTERVAL)
