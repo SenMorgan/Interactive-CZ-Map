@@ -113,6 +113,9 @@ void connectMultiWiFi()
 
     if (status == WL_CONNECTED)
     {
+        // Indicate WiFi connected with purple color (waiting for AWS connection)
+        circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+
         LOGERROR1(F("WiFi connected after time: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
         LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
@@ -361,8 +364,8 @@ void initWiFiManager()
 
         if (WiFi.status() == WL_CONNECTED)
         {
-            // Indicate WiFi connected
-            circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+            // Indicate WiFi connected with purple color (waiting for AWS connection)
+            circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
             Serial.print(F("connected. Local IP: "));
             Serial.println(WiFi.localIP());
