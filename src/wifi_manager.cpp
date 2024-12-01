@@ -1,6 +1,7 @@
 #include <LittleFS.h>
 #include <WiFiMulti.h>
 #include "custom_html.h"
+#include "leds.h"
 #include "wifi_manager.h"
 
 // Configure DoubleResetDetector to use LittleFS
@@ -67,9 +68,10 @@ String Router_Pass;
 // Indicates whether ESP has WiFi credentials saved from previous session, or double reset detected
 bool initialConfig; // = false;
 
-uint8_t connectMultiWiFi()
+void connectMultiWiFi()
 {
-    uint8_t status;
+    // Indicate connecting to WiFi
+    circleLedEffect(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
 
     LOGERROR(F("ConnectMultiWiFi with :"));
 
@@ -93,7 +95,7 @@ uint8_t connectMultiWiFi()
 
     int i = 0;
 
-    status = wifiMulti.run();
+    uint8_t status = wifiMulti.run();
     delay(WIFI_MULTI_1ST_CONNECT_WAITING_MS);
 
     while ((i++ < 20) && (status != WL_CONNECTED))
@@ -108,6 +110,9 @@ uint8_t connectMultiWiFi()
 
     if (status == WL_CONNECTED)
     {
+        // Indicate WiFi connected
+        circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+
         LOGERROR1(F("WiFi connected after time: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
         LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
@@ -122,8 +127,6 @@ uint8_t connectMultiWiFi()
         // Restart after unsuccessful connection
         ESP.restart();
     }
-
-    return status;
 }
 
 int calcChecksum(uint8_t *address, uint16_t sizeToCalc)
@@ -205,6 +208,9 @@ void initWiFiManager()
         {
             Serial.println(F("Initializing LittleFS failed!. Please use SPIFFS or EEPROM. Stay forever..."));
 
+            // Indicate error
+            circleLedEffect(CRGB::Red, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+
             while (true)
                 delay(1);
         }
@@ -280,6 +286,9 @@ void initWiFiManager()
         ESPAsync_wifiManager.setCredentials(WM_config.WiFi_Creds[0].wifi_ssid, WM_config.WiFi_Creds[0].wifi_pw,
                                             WM_config.WiFi_Creds[1].wifi_ssid, WM_config.WiFi_Creds[1].wifi_pw);
 
+        // Indicate that Config Portal is running
+        circleLedEffect(CRGB::Orange, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+
         // Blocking loop waiting to enter Config Portal and update WiFi Credentials
         if (!ESPAsync_wifiManager.startConfigPortal((const char *)ssid.c_str(), password.c_str()))
             Serial.println(F("Not connected to WiFi but continuing anyway."));
@@ -344,18 +353,25 @@ void initWiFiManager()
             connectMultiWiFi();
         }
     }
-
-    Serial.print(F("After waiting "));
-    Serial.print((float)(millis() - startedAt) / 1000);
-    Serial.print(F(" secs more in setup(), connection result is "));
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.print(F("connected. Local IP: "));
-        Serial.println(WiFi.localIP());
-    }
     else
-        Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
+    {
+        Serial.print(F("After waiting "));
+        Serial.print((float)(millis() - startedAt) / 1000);
+        Serial.print(F(" secs more in setup(), connection result is "));
+
+        if (WiFi.status() == WL_CONNECTED)
+        {
+            // Indicate WiFi connected
+            circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+
+            Serial.print(F("connected. Local IP: "));
+            Serial.println(WiFi.localIP());
+        }
+        else
+        {
+            Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
+        }
+    }
 }
 
 /**
