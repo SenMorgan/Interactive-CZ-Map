@@ -3,6 +3,7 @@
 #include "aws_iot.h"
 #include "constants.h"
 #include "leds_parser.h"
+#include "leds.h"
 #include "software_update.h"
 
 // Interval for publishing device status (in milliseconds)
@@ -73,6 +74,9 @@ void connectToAWS()
     static uint32_t reconnectDelay = RECONNECT_INITIAL_DELAY;
     static uint32_t lastReconnectAttempt = 0;
 
+    // Indicate connection attempt
+    circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+
     // Attempt to connect to AWS IoT indefinitely
     if (!client.connect(THINGNAME))
     {
@@ -101,6 +105,9 @@ void connectToAWS()
         reconnectDelay = RECONNECT_INITIAL_DELAY;      // Reset reconnect delay
         client.subscribe(MQTT_SUB_TOPIC_ALL_COMMANDS); // Subscribe to all commands
         publishStatus();                               // Publish the device status
+
+        // Indicate connection success
+        circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
     }
 }
 

@@ -117,9 +117,6 @@ void connectMultiWiFi()
 
     if (status == WL_CONNECTED)
     {
-        // Indicate WiFi connected
-        circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
-
         LOGERROR1(F("WiFi connected after time: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
         LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
