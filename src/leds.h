@@ -6,7 +6,7 @@
 #define LOOP_INDEFINITELY -1 // Value of fadeCycles to loop indefinitely
 
 void ledsTaskInit();
-void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color);
+void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
 void circleLedEffect(CRGB color);
 
 #endif // LEDS_H
