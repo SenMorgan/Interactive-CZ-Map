@@ -64,7 +64,8 @@ void resetLedsStates()
  * in the circle to the desired color with specific brightness and fade duration.
  *
  * @param color The color to set the circle LEDs to.
- * @param cycles The number of times the effect should repeat. Use LOOP_INDEFINITELY for infinite.
+ * @param fadeDuration The duration of the fade effect in milliseconds.
+ * @param fadeCycles The number of times the effect should repeat. Use LOOP_INDEFINITELY for infinite.
  */
 void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
 {
@@ -105,19 +106,19 @@ void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fa
     else
         Serial.printf("Brightness [%d] is out of bounds [0, 255]\n", brightness);
 
-    // Validate and set the fade delay
+    // Validate and set the fade duration
     if (fadeDuration <= MAX_FADE_DURATION)
         state.fadeDuration = fadeDuration;
     else
-        Serial.printf("Fade delay [%d] is out of bounds [0, %d]\n", fadeDuration, MAX_FADE_DURATION);
+        Serial.printf("Fade duration [%d] is out of bounds [0, %d]\n", fadeDuration, MAX_FADE_DURATION);
 
-    // Validate and set the fade count. This parameter starts the effect if it is greater than 0 or LOOP_INDEFINITELY for infinite.
+    // Validate and set the fade cycles
     if ((fadeCycles > 0 && fadeCycles <= MAX_FADE_REPEATS) || fadeCycles == LOOP_INDEFINITELY)
         state.fadeCycles = fadeCycles;
     else
-        Serial.printf("Fade cycles [%d] is out of bounds [1, %d] or not LOOP_INDEFINITELY for infinite\n", fadeCycles, MAX_FADE_REPEATS);
+        Serial.printf("Fade cycles [%d] are invalid. Must be between 1 and %d or LOOP_INDEFINITELY.\n", fadeCycles, MAX_FADE_REPEATS);
 
-    // Set the color without validating
+    // Set the color
     state.color = color;
 
     // Initialize fading parameters
@@ -152,11 +153,11 @@ void refreshLeds()
             unsigned long elapsed = currentTime - state.startTime;
 
             // Check if the elapsed time is less than the fade duration
-            if (elapsed < state.fadeDuration)
+            if (state.fadeDuration > 0 && elapsed < state.fadeDuration)
             {
-                // Calculate the progress of the fade effect
-                float fadeProgress = (float)elapsed / state.fadeDuration;
-                uint8_t currentBrightness;
+                // Calculate fade progress
+                float fadeProgress = (float)(elapsed) / state.fadeDuration;
+                uint8_t currentBrightness = 0;
 
                 if (state.direction == FADE_IN)
                 {
@@ -166,10 +167,10 @@ void refreshLeds()
                 else // FADE_OUT
                 {
                     // Calculate the current brightness based on the fade progress (fade out)
-                    currentBrightness = (uint8_t)(state.brightness * (1.0 - fadeProgress));
+                    currentBrightness = (uint8_t)(state.brightness * (1.0f - fadeProgress));
                 }
 
-                // Set the LED color and brightness
+                // Update LED brightness
                 leds[i] = state.color;
                 leds[i].nscale8_video(currentBrightness);
             }
@@ -180,15 +181,15 @@ void refreshLeds()
                     // Complete fade-in
                     leds[i] = state.color;
                     leds[i].nscale8_video(state.brightness);
-                    // Switch to fade-out
+                    // Switch to fade-out for next cycle
                     state.direction = FADE_OUT;
                 }
                 else // FADE_OUT
                 {
-                    // Check if the fade effect should repeat and decrease the repeat count
+                    // Check if the fade effect should repeat
                     if (state.fadeCycles != LOOP_INDEFINITELY)
                     {
-                        // The fade effect has completed for this cycle. Decrease the repeat count.
+                        // Decrement fade cycles
                         state.fadeCycles--;
                         if (state.fadeCycles <= 0)
                         {
@@ -198,22 +199,35 @@ void refreshLeds()
                         }
                     }
 
-                    // Switch to fade-in
-                    state.direction = FADE_IN;
+                    if (state.useFadeIn)
+                    {
+                        // Switch to fade-in
+                        state.direction = FADE_IN;
+                        leds[i] = CRGB::Black;
+                    }
+                    else
+                    {
+                        // Reset brightness without fading in
+                        leds[i] = state.color;
+                        leds[i].nscale8_video(state.brightness);
+                    }
                 }
 
-                // Reset for the next fade cycle
+                // Reset start time for the next cycle
                 state.startTime = currentTime;
             }
         }
         else if (state.fadeCycles != 0)
         {
-            // Start or restart the fade effect if fadeCycles > 0 or LOOP_INDEFINITELY for infinite
-            state.startTime = currentTime;
+            // Start or restart the fade effect
             state.isFading = true;
-            state.direction = FADE_IN; // Start with fade-in
-            leds[i] = CRGB::Black;
-            leds[i].nscale8_video(0);
+            state.direction = state.useFadeIn ? FADE_IN : FADE_OUT;
+            state.startTime = currentTime;
+
+            if (state.direction == FADE_IN)
+                leds[i] = CRGB::Black;
+            else
+                leds[i].nscale8_video(0);
         }
     }
 
@@ -225,8 +239,7 @@ void refreshLeds()
  * @brief Task to manage LED strip updates.
  *
  * This task initializes the LED strip, sets all LEDs to off, and then enters a loop
- * where it updates the LED states at a fixed frequency. The task also blinks one LED
- * to indicate the start of the task.
+ * where it updates the LED states at a fixed frequency.
  *
  * @param pvParameters Pointer to the parameters passed to the task (not used).
  */
@@ -247,7 +260,7 @@ void ledsTask(void *pvParameters)
     // Main task loop
     for (;;)
     {
-        // Update their states
+        // Update LED states
         refreshLeds();
 
         // Wait for the next cycle.
@@ -264,13 +277,13 @@ void ledsTask(void *pvParameters)
  */
 void ledsTaskInit(void)
 {
-    if (pdPASS != xTaskCreatePinnedToCore(ledsTask,
-                                          "ledsTask",
-                                          LEDS_TASK_STACK_SIZE,
-                                          NULL,
-                                          LEDS_TASK_PRIORITY,
-                                          NULL,
-                                          LEDS_TASK_CORE))
+    if (xTaskCreatePinnedToCore(ledsTask,
+                                "ledsTask",
+                                LEDS_TASK_STACK_SIZE,
+                                NULL,
+                                LEDS_TASK_PRIORITY,
+                                NULL,
+                                LEDS_TASK_CORE) != pdPASS)
     {
         Serial.println("Failed to create ledsTask");
     }
