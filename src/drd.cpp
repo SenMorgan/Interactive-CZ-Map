@@ -114,13 +114,13 @@ void drdTaskInit(uint32_t timeoutMs)
 {
     drdTimeout = timeoutMs;
 
-    if (pdPASS != xTaskCreatePinnedToCore(drdTask,
-                                          "drdTask",
-                                          DRD_TASK_STACK_SIZE,
-                                          NULL,
-                                          DRD_TASK_PRIORITY,
-                                          NULL,
-                                          DRD_TASK_CORE))
+    if (xTaskCreatePinnedToCore(drdTask,
+                                "drdTask",
+                                DRD_TASK_STACK_SIZE,
+                                NULL,
+                                DRD_TASK_PRIORITY,
+                                NULL,
+                                DRD_TASK_CORE) != pdPASS)
     {
         Serial.println("Failed to create drdTask");
     }
