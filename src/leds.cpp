@@ -9,8 +9,7 @@
 #define LEDS_TASK_CORE         1 // Core 0 is used by the WiFi
 
 // Circle effect parameters
-#define CIRCLE_EFFECT_FADE_DURATION 1000
-#define CIRCLE_EFFECT_BRIGHTNESS    50
+#define CIRCLE_EFFECT_BRIGHTNESS 50
 const uint8_t CIRCLE_LEDS_ARRAY[] = {0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 12, 16, 17, 19, 21, 24, 25, 29, 30, 31,
                                      35, 36, 37, 42, 44, 50, 54, 56, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71};
 
@@ -65,15 +64,16 @@ void resetLedsStates()
  * in the circle to the desired color with specific brightness and fade duration.
  *
  * @param color The color to set the circle LEDs to.
+ * @param cycles The number of times the effect should repeat. Use LOOP_INDEFINITELY for infinite.
  */
-void circleLedEffect(CRGB color)
+void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
 {
     // Reset all LEDs
     resetLedsStates();
 
     // Set circle LEDs to the desired color
     for (uint8_t i : CIRCLE_LEDS_ARRAY)
-        setLed(i, CIRCLE_EFFECT_BRIGHTNESS, CIRCLE_EFFECT_FADE_DURATION, LOOP_INDEFINITELY, color);
+        setLed(i, CIRCLE_EFFECT_BRIGHTNESS, fadeDuration, fadeCycles, color);
 }
 
 /**
@@ -241,9 +241,6 @@ void ledsTask(void *pvParameters)
     // Set all LEDs to off
     resetLedsStates();
     FastLED.show();
-
-    // Start infinite fade-in-out effect on one LED to indicate the task is running
-    circleLedEffect(CRGB::Blue);
 
     Serial.println("ledsTask started");
 
