@@ -1,3 +1,10 @@
+/**
+ * @file wifi_manager.cpp
+ * @brief WiFi Manager implementation for ESP32.
+ *
+ * This code was hardly inspired by examples from https://github.com/khoih-prog/ESPAsync_WiFiManager
+ */
+
 #include <LittleFS.h>
 #include <WiFiMulti.h>
 #include "custom_html.h"
