@@ -1,9 +1,9 @@
 [env]
 build_flags =
 	-D SOFTWARE_VERSION=\"0.0.1\"
-	-D WIFI_SSID=\"MyWiFi\"
-	-D WIFI_PASSWORD=\"MyPassword\"
 	-D HOSTNAME=\"Interactive-CZ-Map\"
+	-D AP_SSID=\"Interactive-CZ-Map\"
+	-D AP_PASSWORD=\"MyPassword\"
 
 ; Optionally predefine upload_port and upload_speed
 ; [env:espwroom32]

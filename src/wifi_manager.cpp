@@ -59,11 +59,6 @@ WM_Config WM_config;
 WiFiMulti wifiMulti;
 FS *filesystem;
 
-// SSID and PW for Config Portal
-String ssid = "ESP_" + String(ESP_getChipId(), HEX);
-String password;
-// extern const char* password;    // = "your_password";
-
 // SSID and PW for your Router
 String Router_SSID;
 String Router_Pass;
@@ -242,10 +237,6 @@ void initWiFiManager()
     // Remove this line if you do not want to see WiFi password printed
     Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
 
-    // SSID to uppercase
-    ssid.toUpperCase();
-    password = "My" + ssid;
-
     bool configDataLoaded = false;
 
     // Don't permit NULL password
@@ -283,7 +274,7 @@ void initWiFiManager()
 
     if (initialConfig)
     {
-        Serial.printf("Starting Config Portal on 192.168.4.1 with SSID = %s, PWD = %s\n", ssid.c_str(), password.c_str());
+        Serial.println(F("Starting Config Portal. SSID: " AP_SSID));
 
         // New. Update Credentials, got from loadConfigData(), to display on CP
         ESPAsync_wifiManager.setCredentials(WM_config.WiFi_Creds[0].wifi_ssid, WM_config.WiFi_Creds[0].wifi_pw,
@@ -293,7 +284,7 @@ void initWiFiManager()
         circleLedEffect(CRGB::Orange, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
 
         // Blocking loop waiting to enter Config Portal and update WiFi Credentials
-        if (!ESPAsync_wifiManager.startConfigPortal((const char *)ssid.c_str(), password.c_str()))
+        if (!ESPAsync_wifiManager.startConfigPortal(AP_SSID, AP_PASSWORD))
             Serial.println(F("Not connected to WiFi but continuing anyway."));
         else
         {
