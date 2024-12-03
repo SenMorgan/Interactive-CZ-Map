@@ -15,6 +15,13 @@
 #include "secrets.h"
 
 // ============================================================================
+// System Configuration
+// ============================================================================
+
+#define HOSTNAME         "Interactive-CZ-Map"
+#define SOFTWARE_VERSION "0.0.1"
+
+// ============================================================================
 // MQTT Configuration
 // ============================================================================
 
@@ -37,16 +44,6 @@
 #define MQTT_SUB_TOPIC_ALL_COMMANDS MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/#"
 
 // ============================================================================
-// Hardware Configuration
-// ============================================================================
-
-// Count of LEDs on the map
-#define LEDS_COUNT 72
-
-// IO pins
-#define LEDS_PIN GPIO_NUM_25
-
-// ============================================================================
 // LED Effect Configuration
 // ============================================================================
 
@@ -57,12 +54,13 @@
 #define MAX_FADE_REPEATS 100
 
 // ============================================================================
-// Software Versioning
+// Hardware Configuration
 // ============================================================================
 
-// Software version must be set via build flags, so here we just check if it's defined
-#ifndef SOFTWARE_VERSION
-#error "SOFTWARE_VERSION must be defined in build flags!"
-#endif
+// Count of LEDs on the map
+#define LEDS_COUNT 72
+
+// IO pins
+#define LEDS_PIN GPIO_NUM_25
 
 #endif // _CONSTANTS_H

@@ -1,13 +1,6 @@
-[env]
-build_flags =
-	-D SOFTWARE_VERSION=\"0.0.1\"
-	-D HOSTNAME=\"Interactive-CZ-Map\"
-	-D AP_SSID=\"Interactive-CZ-Map\"
-	-D AP_PASSWORD=\"MyPassword\"
-
-; Optionally predefine upload_port and upload_speed
-; [env:espwroom32]
-; monitor_port = COM16
-; monitor_filters = time
-; upload_speed = 921600
-; upload_port = COM16
+; Optionally predefine port and monitoring settings
+[env:espwroom32]
+monitor_port = COM3
+monitor_filters = time
+upload_speed = 921600
+upload_port = COM3

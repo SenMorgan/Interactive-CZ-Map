@@ -7,6 +7,7 @@
 
 #include <LittleFS.h>
 #include <WiFiMulti.h>
+#include "constants.h"
 #include "custom_html.h"
 #include "drd.h"
 #include "leds.h"
