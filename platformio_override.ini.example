@@ -1,6 +1,0 @@
-; Optionally predefine port and monitoring settings
-[env:espwroom32]
-monitor_port = COM3
-monitor_filters = time
-upload_speed = 921600
-upload_port = COM3
