@@ -222,7 +222,7 @@ void initWiFiManager(const char *chipID)
     unsigned long startedAt = millis();
 
     // Compose hostname from chipID and set it
-    const char *hostname = (String(HOSTNAME_PREFIX) + String(chipID)).c_str();
+    const char *hostname = (String(HOSTNAME_PREFIX) + "_" + String(chipID)).c_str();
     WiFi.setHostname(hostname);
 
     AsyncWebServer webServer(HTTP_PORT);

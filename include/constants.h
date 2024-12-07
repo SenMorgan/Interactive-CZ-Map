@@ -18,8 +18,8 @@
 // System Configuration
 // ============================================================================
 
-// Hostname format: HOSTNAME_PREFIX<ChipID>
-#define HOSTNAME_PREFIX  "Interactive-CZ-Map-"
+// Hostname format: <Hostname prefix>_<Chip ID>
+#define HOSTNAME_PREFIX  "Interactive-CZ-Map"
 
 // Firmware version of the Interactive CZ Map project
 #define FIRMWARE_VERSION "0.0.1"
