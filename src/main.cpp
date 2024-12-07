@@ -4,11 +4,16 @@
 #include "leds.h"
 #include "wifi_manager.h"
 
+#include "esp32_utils.h"
+
 void setup()
 {
-    Serial.begin(115200);
-    while (!Serial)
-        delay(10);
+    initSerial();
+
+    char chipID[CHIP_ID_LENGTH];
+    getEsp32ChipID(chipID, sizeof(chipID));
+    Serial.print(F("Initializing Interactive CZ Map device with Chip ID: "));
+    Serial.println(chipID);
 
     // Initialize modules
     ledsTaskInit();
