@@ -190,8 +190,10 @@ void saveConfigData()
 
 /**
  * @brief Initializes the WiFi Manager and sets up the WiFi connection.
+ *
+ * @param chipID The unique chip ID of the ESP32 device.
  */
-void initWiFiManager()
+void initWiFiManager(const char *chipID)
 {
     Serial.println(F("Initializing WiFi Manager..."));
 
@@ -219,9 +221,13 @@ void initWiFiManager()
 
     unsigned long startedAt = millis();
 
+    // Compose hostname from chipID and set it
+    const char *hostname = (String(HOSTNAME_PREFIX) + String(chipID)).c_str();
+    WiFi.setHostname(hostname);
+
     AsyncWebServer webServer(HTTP_PORT);
     AsyncDNSServer dnsServer;
-    ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, HOSTNAME);
+    ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, hostname);
 
     // Set config portal channel, default = 1. Use 0 => random channel from 1-11
     ESPAsync_wifiManager.setConfigPortalChannel(0);

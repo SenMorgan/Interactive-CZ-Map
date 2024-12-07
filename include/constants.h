@@ -18,7 +18,10 @@
 // System Configuration
 // ============================================================================
 
-#define HOSTNAME         "Interactive-CZ-Map"
+// Hostname format: HOSTNAME_PREFIX<ChipID>
+#define HOSTNAME_PREFIX  "Interactive-CZ-Map-"
+
+// Software version of the Interactive CZ Map project
 #define SOFTWARE_VERSION "0.0.1"
 
 // ============================================================================

@@ -17,7 +17,7 @@ void setup()
 
     // Initialize modules
     ledsTaskInit();
-    initWiFiManager();
+    initWiFiManager(chipID);
     initAWS();
 }
 
