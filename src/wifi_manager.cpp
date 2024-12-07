@@ -195,9 +195,6 @@ void initWiFiManager()
 {
     Serial.println(F("Initializing WiFi Manager..."));
 
-    // Initialize Double Reset Detection for starting Config Portal if DRD
-    drdTaskInit(DRD_TIMEOUT);
-
     // Format LittleFS on fail
     if (!LittleFS.begin(true))
     {
@@ -216,6 +213,9 @@ void initWiFiManager()
     }
 
     Serial.println(F("LittleFS initialized"));
+
+    // Initialize Double Reset Detection for starting Config Portal if DRD
+    drdTaskInit(DRD_TIMEOUT);
 
     unsigned long startedAt = millis();
 
