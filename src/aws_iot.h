@@ -3,7 +3,7 @@
 
 #include <PubSubClient.h>
 
-void initAWS();
+void initAWS(const char *id);
 void maintainAWSConnection();
 void periodicStatusPublish();
 

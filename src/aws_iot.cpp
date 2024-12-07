@@ -19,8 +19,17 @@
 WiFiClientSecure net;
 PubSubClient client(net);
 
-// Global variables
-uint32_t lastPublishTime = 0; // Last time the device status was published
+// Last time the device status was published
+uint32_t lastPublishTime = 0;
+
+// Pointer to the client ID
+const char *clientId = NULL;
+
+// Device-specific MQTT topics
+char ledsSubTopic[sizeof(MQTT_SUB_TOPIC_LEDS_TEMPLATE) + MAX_CLIENT_ID_LENGTH];
+char updateSubTopic[sizeof(MQTT_SUB_TOPIC_UPDATE_TEMPLATE) + MAX_CLIENT_ID_LENGTH];
+char statusPubTopic[sizeof(MQTT_PUB_TOPIC_STATUS_TEMPLATE) + MAX_CLIENT_ID_LENGTH];
+char updateStatusPubTopic[sizeof(MQTT_PUB_TOPIC_UPDATE_STATUS_TEMPLATE) + MAX_CLIENT_ID_LENGTH];
 
 // Function declarations
 void connectToAWS();
@@ -39,9 +48,20 @@ void handleUpdateCommand(JsonDocument &doc);
  * The function will continuously attempt to connect to the AWS IoT endpoint until a
  * connection is established. If the connection fails, an error message is printed to
  * the Serial monitor.
+ *
+ * @param id Pointer to the client ID to use for the AWS IoT connection.
  */
-void initAWS()
+void initAWS(const char *id)
 {
+    // Store the client ID
+    clientId = id;
+
+    // Construct the device-specific MQTT topics
+    snprintf(ledsSubTopic, sizeof(ledsSubTopic), MQTT_SUB_TOPIC_LEDS_TEMPLATE, clientId);
+    snprintf(updateSubTopic, sizeof(updateSubTopic), MQTT_SUB_TOPIC_UPDATE_TEMPLATE, clientId);
+    snprintf(statusPubTopic, sizeof(statusPubTopic), MQTT_PUB_TOPIC_STATUS_TEMPLATE, clientId);
+    snprintf(updateStatusPubTopic, sizeof(updateStatusPubTopic), MQTT_PUB_TOPIC_UPDATE_STATUS_TEMPLATE, clientId);
+
     // Configure WiFiClientSecure to use the AWS IoT device credentials
     net.setCACert(AWS_CERT_CA);
     net.setCertificate(AWS_CERT_CRT);
@@ -78,7 +98,7 @@ void connectToAWS()
     circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
     // Attempt to connect to AWS IoT indefinitely
-    if (!client.connect(THINGNAME))
+    if (!client.connect(clientId))
     {
         uint32_t timeNow = millis();
         // Check if the last reconnection attempt was too soon
@@ -102,9 +122,17 @@ void connectToAWS()
     {
         // Connection successful
         Serial.println(F("Connected to AWS IoT"));
-        reconnectDelay = RECONNECT_INITIAL_DELAY;      // Reset reconnect delay
-        client.subscribe(MQTT_SUB_TOPIC_ALL_COMMANDS); // Subscribe to all commands
-        publishStatus();                               // Publish the device status
+        reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
+
+        // Subscribe to general topics
+        client.subscribe(MQTT_SUB_TOPIC_LEDS_GENERAL);
+        client.subscribe(MQTT_SUB_TOPIC_UPDATE_GENERAL);
+
+        // Subscribe to device-specific topics
+        client.subscribe(ledsSubTopic);
+        client.subscribe(updateSubTopic);
+
+        publishStatus(); // Publish the device status
 
         // Indicate connection success
         circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
@@ -196,7 +224,7 @@ void publishStatus()
     doc["hostname"] = WiFi.getHostname();
 
     // Publish the status message
-    publishJson(MQTT_PUB_TOPIC_STATUS, doc);
+    publishJson(statusPubTopic, doc);
 }
 
 /**
@@ -232,7 +260,7 @@ void publishFirmwareUpdateStart(const char *firmwareUrl)
     doc["message"] = statusMessage;
 
     // Publish the update start message
-    publishJson(MQTT_PUB_TOPIC_UPDATE_STATUS, doc);
+    publishJson(updateStatusPubTopic, doc);
 }
 
 /**
@@ -256,7 +284,7 @@ void publishFirmwareUpdateResult(bool success, const char *message)
     doc["message"] = statusMessage;
 
     // Publish the update result message
-    publishJson(MQTT_PUB_TOPIC_UPDATE_STATUS, doc);
+    publishJson(updateStatusPubTopic, doc);
 }
 
 /**
@@ -293,9 +321,9 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
     }
 
     // Dispatch to appropriate handler based on topic
-    if (strcmp(topic, MQTT_SUB_TOPIC_LEDS) == 0)
+    if (strcmp(topic, MQTT_SUB_TOPIC_LEDS_GENERAL) == 0 || strcmp(topic, ledsSubTopic) == 0)
         setLedsFromJsonDoc(doc);
-    else if (strcmp(topic, MQTT_SUB_TOPIC_UPDATE) == 0)
+    else if (strcmp(topic, MQTT_SUB_TOPIC_UPDATE_GENERAL) == 0 || strcmp(topic, updateSubTopic) == 0)
         handleUpdateCommand(doc);
     else
         Serial.printf("Unknown topic received: %s\n", topic);

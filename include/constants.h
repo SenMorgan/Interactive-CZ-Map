@@ -19,7 +19,7 @@
 // ============================================================================
 
 // Hostname format: <Hostname prefix>_<Chip ID>
-#define HOSTNAME_PREFIX  "Interactive-CZ-Map"
+#define HOSTNAME_PREFIX "Interactive-CZ-Map"
 
 // Firmware version of the Interactive CZ Map project
 #define FIRMWARE_VERSION "0.0.1"
@@ -28,23 +28,23 @@
 // MQTT Configuration
 // ============================================================================
 
-// Device ID could be the same as the Thing Name or a unique identifier
-#define DEVICE_ID THINGNAME
+// Maximum length of the client ID (extend if necessary)
+#define MAX_CLIENT_ID_LENGTH 32
 
 // Base MQTT topic for the project
 #define MQTT_BASE_TOPIC "interactive-cz-map"
 
-// Full MQTT topics for subscribing and publishing
-// Commands sent to the device
-#define MQTT_SUB_TOPIC_LEDS   MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/leds"
-#define MQTT_SUB_TOPIC_UPDATE MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/update"
+// General topics subscribed to by all devices
+#define MQTT_SUB_TOPIC_LEDS_GENERAL   MQTT_BASE_TOPIC "/commands/leds"
+#define MQTT_SUB_TOPIC_UPDATE_GENERAL MQTT_BASE_TOPIC "/commands/update"
 
-// Topics published by the device
-#define MQTT_PUB_TOPIC_STATUS        MQTT_BASE_TOPIC "/" DEVICE_ID "/status"
-#define MQTT_PUB_TOPIC_UPDATE_STATUS MQTT_BASE_TOPIC "/" DEVICE_ID "/status/update"
+// Device-specific topics subscribed to by the device
+#define MQTT_SUB_TOPIC_LEDS_TEMPLATE   MQTT_BASE_TOPIC "/%s/commands/leds"
+#define MQTT_SUB_TOPIC_UPDATE_TEMPLATE MQTT_BASE_TOPIC "/%s/commands/update"
 
-// Wildcard topics for broader subscriptions
-#define MQTT_SUB_TOPIC_ALL_COMMANDS MQTT_BASE_TOPIC "/" DEVICE_ID "/commands/#"
+// Device-specific topics published by the device
+#define MQTT_PUB_TOPIC_STATUS_TEMPLATE        MQTT_BASE_TOPIC "/%s/status"
+#define MQTT_PUB_TOPIC_UPDATE_STATUS_TEMPLATE MQTT_BASE_TOPIC "/%s/status/update"
 
 // ============================================================================
 // LED Effect Configuration

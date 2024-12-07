@@ -18,7 +18,13 @@ void setup()
     // Initialize modules
     ledsTaskInit();
     initWiFiManager(chipID);
-    initAWS();
+
+    // Initialize AWS IoT with the Thing Name if defined, otherwise use the Chip ID
+#ifdef THINGNAME
+    initAWS(THINGNAME);
+#else
+    initAWS(chipID);
+#endif
 }
 
 void loop()
