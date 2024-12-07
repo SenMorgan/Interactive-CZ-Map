@@ -274,8 +274,12 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
 {
 #define MAX_PRINTABLE_LENGTH 128 // Maximum length of payload to print
 
-    Serial.printf("IoT message arrived. Topic: %s. Size: %u bytes. Payload: %.*s\n",
-                  topic, length, length > MAX_PRINTABLE_LENGTH ? MAX_PRINTABLE_LENGTH : length, payload);
+    if (length <= MAX_PRINTABLE_LENGTH)
+        Serial.printf("IoT message arrived. Topic: %s. Size: %u bytes. Payload: %.*s\n",
+                      topic, length, length, payload);
+    else
+        Serial.printf("IoT message arrived. Topic: %s. Size: %u bytes. Payload (first %d bytes): %.*s\n",
+                      topic, length, MAX_PRINTABLE_LENGTH, MAX_PRINTABLE_LENGTH, payload);
 
     // Allocate the JSON document
     JsonDocument doc;
