@@ -21,8 +21,8 @@
 // Hostname format: HOSTNAME_PREFIX<ChipID>
 #define HOSTNAME_PREFIX  "Interactive-CZ-Map-"
 
-// Software version of the Interactive CZ Map project
-#define SOFTWARE_VERSION "0.0.1"
+// Firmware version of the Interactive CZ Map project
+#define FIRMWARE_VERSION "0.0.1"
 
 // ============================================================================
 // MQTT Configuration

@@ -2,7 +2,7 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include "constants.h"
-#include "software_update.h"
+#include "firmware_update.h"
 
 /**
  * @brief Performs the firmware update using the provided firmware URL.

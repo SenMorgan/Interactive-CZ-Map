@@ -4,7 +4,7 @@
 #include "constants.h"
 #include "leds_parser.h"
 #include "leds.h"
-#include "software_update.h"
+#include "firmware_update.h"
 
 // Interval for publishing device status (in milliseconds)
 #define STATUS_PUBLISH_INTERVAL 60 * 1000
@@ -175,10 +175,10 @@ void publishJson(const char *topic, const JsonDocument &doc)
 }
 
 /**
- * @brief Publishes the device status, including software version and other relevant information.
+ * @brief Publishes the device status, including firmware version and other relevant information.
  *
  * This function constructs a JSON document containing the device's current status,
- * such as software version, Wi-Fi status, IP address, and any other pertinent details.
+ * such as firmware version, Wi-Fi status, IP address, and any other pertinent details.
  * It then publishes this JSON document to the predefined MQTT status topic.
  */
 void publishStatus()
@@ -187,7 +187,7 @@ void publishStatus()
     JsonDocument doc;
 
     // Populate the JSON document with status information
-    doc["software_version"] = SOFTWARE_VERSION;
+    doc["firmware_version"] = FIRMWARE_VERSION;
     doc["uptime"] = millis() / 1000;
     doc["reset_reason"] = esp_reset_reason();
     doc["wifi_ssid"] = WiFi.SSID();
