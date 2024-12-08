@@ -25,7 +25,7 @@
 #define FIRMWARE_VERSION "0.0.1"
 
 // Timeout for detecting double reset (used to manually enter Config Portal)
-#define DRD_TIMEOUT 5000
+#define DRD_TIMEOUT 2000
 
 // ============================================================================
 // MQTT Configuration
