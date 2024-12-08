@@ -41,8 +41,11 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
     // Check the HTTP response code
     if (httpCode != HTTP_CODE_OK)
     {
-        String details = "HTTP error: " + http.errorToString(httpCode);
+        // Determine if the error is from the HTTP client and retrieve the error message
+        String httpClientError = http.errorToString(httpCode);
+        String details = httpClientError.isEmpty() ? "HTTP request returned: " + String(httpCode) : "HTTP client error: " + httpClientError;
         publishResult(false, details.c_str());
+        // Clean up the HTTP connection
         http.end();
         return;
     }
