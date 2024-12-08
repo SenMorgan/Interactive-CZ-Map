@@ -292,7 +292,7 @@ void refreshLeds()
             if (state.direction == FADE_IN)
                 leds[i] = CRGB::Black;
             else
-                leds[i].nscale8_video(0);
+                leds[i].nscale8_video(state.brightness);
         }
     }
 
