@@ -8,6 +8,9 @@
 #define CIRCLE_EFFECT_FAST_FADE_DURATION 300
 
 void ledsTaskInit();
+void startProgressIndication();
+void stopProgressIndication();
+void progressIndicator(uint8_t progress, CRGB color);
 void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
 void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles);
 

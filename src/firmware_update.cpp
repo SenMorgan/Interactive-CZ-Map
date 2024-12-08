@@ -2,6 +2,7 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include "constants.h"
+#include "leds.h"
 #include "firmware_update.h"
 
 /**
@@ -11,7 +12,6 @@
  * If the update is successful, the device restarts to run the new firmware.
  *
  * @param firmwareUrl The HTTPS URL from which to download the firmware binary.
- * @param publishResult The callback function to publish the update status.
  */
 void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
 {
@@ -70,10 +70,16 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
 
     // Create a buffer to hold the firmware data
     WiFiClient *stream = http.getStreamPtr();
-    size_t written = 0;
+    uint32_t written = 0;
     const size_t bufferSize = 2048;
     uint8_t buffer[bufferSize] = {0};
     size_t bytesRead = 0;
+
+    // Variable to track the last progress percentage - used to print log and update the progress indicator
+    uint8_t lastProgress = 0;
+
+    // Prepare the progress indication
+    startProgressIndication();
 
     while (http.connected() && (bytesRead = stream->readBytes(buffer, bufferSize)) > 0)
     {
@@ -87,11 +93,20 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
             return;
         }
         written += bytesRead;
-        Serial.printf("Written %u / %u bytes\n", written, contentLength);
+
+        // Calculate the progress percentage
+        uint8_t progress = (written * 100) / contentLength;
+        // Print log and update the progress indicator every 1% change
+        if (progress != lastProgress)
+        {
+            Serial.printf("Firmware update progress: %u%% (%u / %u bytes)\n", progress, written, contentLength);
+            progressIndicator(progress, CRGB::Blue);
+            lastProgress = progress;
+        }
     }
 
     // Verify that we have written the exact amount of data
-    if (written != (size_t)contentLength)
+    if (written != (uint32_t)contentLength)
     {
         String details = "Mismatch in written bytes. Expected: " + String(contentLength) +
                          ", Written: " + String(written);
@@ -122,4 +137,7 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
         String details = "Update.end() failed with error: " + String(Update.errorString());
         publishResult(false, details.c_str());
     }
+
+    // Do not stop progress indication here, as the device will reboot on success.
+    // Otherwise stuck in the progress indication to indicate the failure.
 }

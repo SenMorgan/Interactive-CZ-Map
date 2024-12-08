@@ -9,9 +9,12 @@
 #define LEDS_TASK_CORE         1 // Core 0 is used by the WiFi
 
 // Circle effect parameters
-#define CIRCLE_EFFECT_BRIGHTNESS 50
-const uint8_t CIRCLE_LEDS_ARRAY[] = {0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 12, 16, 17, 19, 21, 24, 25, 29, 30, 31,
-                                     35, 36, 37, 42, 44, 50, 54, 56, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71};
+#define CIRCLE_EFFECT_BRIGHTNESS      50
+#define PROGRESS_INDICATOR_BRIGHTNESS 50
+
+// Define the array of LEDs in the circle in clockwise order
+const uint8_t CIRCLE_LEDS_ARRAY[] = {1, 2, 5, 7, 12, 21, 29, 31, 17, 25, 30, 36, 35, 42, 44, 56, 61, 65, 68,
+                                     71, 69, 64, 67, 70, 66, 60, 54, 50, 37, 24, 19, 16, 10, 9, 6, 3, 0, 4};
 
 // Initialize array with number of LEDs
 CRGB leds[LEDS_COUNT];
@@ -39,6 +42,9 @@ struct LedState
 // Array to hold the state of all LEDs
 LedState ledStates[LEDS_COUNT];
 
+// Variable to store task handle
+TaskHandle_t ledsTaskHandle = NULL;
+
 /**
  * @brief Resets the states of all LEDs.
  *
@@ -55,6 +61,65 @@ void resetLedsStates()
         leds[i] = CRGB::Black;
         ledStates[i] = LedState();
     }
+}
+
+/**
+ * @brief Starts the progress indication by suspending the LED task and resetting all LEDs.
+ *
+ * This function should be called before starting the progress indication to prevent concurrent access
+ * to the LED strip by the LED task. Without this, the progress indication may have flickering issues.
+ */
+void startProgressIndication()
+{
+    // Pause the task to prevent concurrent access
+    vTaskSuspend(ledsTaskHandle);
+
+    // Reset all LEDs
+    resetLedsStates();
+}
+
+/**
+ * @brief Stops the progress indication by resetting all LEDs and resuming the LED task.
+ *
+ * This function resets the states of all LEDs to their default state and resumes the LED task
+ * to allow normal operation to continue.
+ */
+void stopProgressIndication()
+{
+    // Reset all LEDs
+    resetLedsStates();
+
+    // Resume the task to allow normal operation
+    vTaskResume(ledsTaskHandle);
+}
+
+/**
+ * @brief Indicates progress by lighting up LEDs from CIRCLE_LEDS_ARRAY.
+ *
+ * This function lights up LEDs one by one based on the provided progress percentage.
+ *
+ * @param progress Progress percentage (0 to 100).
+ * @param color Color of the LEDs.
+ */
+void progressIndicator(uint8_t progress, CRGB color)
+{
+    // Ensure progress is within 0-100
+    if (progress > 100)
+        progress = 100;
+
+    // Calculate the number of LEDs to light up
+    uint8_t totalLeds = sizeof(CIRCLE_LEDS_ARRAY) / sizeof(CIRCLE_LEDS_ARRAY[0]);
+    uint8_t ledsToLight = (progress * totalLeds) / 100;
+
+    // Update brightness based on PROGRESS_INDICATOR_BRIGHTNESS
+    color.nscale8_video(PROGRESS_INDICATOR_BRIGHTNESS);
+
+    // Light up LEDs based on progress
+    for (uint8_t i = 0; i < ledsToLight; i++)
+        leds[CIRCLE_LEDS_ARRAY[i]] = color;
+
+    // Update the LED strip
+    FastLED.show();
 }
 
 /**
@@ -282,7 +347,7 @@ void ledsTaskInit(void)
                                 LEDS_TASK_STACK_SIZE,
                                 NULL,
                                 LEDS_TASK_PRIORITY,
-                                NULL,
+                                &ledsTaskHandle,
                                 LEDS_TASK_CORE) != pdPASS)
     {
         Serial.println("Failed to create ledsTask");
