@@ -15,6 +15,7 @@ The project was created in PlatformIO 22.11.2024
 3. Create a copy of `src/secrets.h.example` and rename it to `src/secrets.h`.
 4. Customize values in `src/secrets.h` to match your AWS IoT Core configuration and update WiFi configuration if needed. Use [this guide](https://aws.amazon.com/ru/blogs/compute/building-an-aws-iot-core-device-using-aws-serverless-and-an-esp32/) to create a new thing in AWS IoT Core and get the required values.
 5. Use PlatformIO to build and upload the project to your ESP device.
+6. Default password for AP mode is `12345678`.
 
 ## Testing
 You can send messages to the device in AWS IoT MQTT Test console. See `test` folder for examples.
