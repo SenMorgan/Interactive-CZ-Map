@@ -24,6 +24,9 @@ PubSubClient client(net);
 // Last time the device status was published
 uint32_t lastPublishTime = 0;
 
+// Counter for the number of times the device was reconnecting to AWS IoT
+uint32_t reconnectAttempts = 0;
+
 // Pointer to the client ID
 const char *clientId = NULL;
 
@@ -130,7 +133,8 @@ void connectToAWS()
     // Attempt to connect only if the delay has passed
     if (!client.connected() && (timeNow - lastReconnectAttempt >= reconnectDelay))
     {
-        lastReconnectAttempt = timeNow;
+        reconnectAttempts++;            // Increment the number of reconnection attempts
+        lastReconnectAttempt = timeNow; // Update the last reconnect attempt time
 
         if (client.connect(clientId))
         {
@@ -248,6 +252,7 @@ void publishStatus()
     // Populate the JSON document with status information
     doc["fw_version"] = FIRMWARE_VERSION;
     doc["uptime"] = millis() / 1000;
+    doc["reconnects"] = reconnectAttempts;
     doc["reset_reason"] = esp_reset_reason();
     doc["wifi_ssid"] = WiFi.SSID();
     doc["ip_address"] = WiFi.localIP().toString();
