@@ -125,6 +125,7 @@ void performFirmwareUpdate(const char *firmwareUrl, PublishResult publishResult)
         if (Update.isFinished())
         {
             publishResult(true, "Rebooting...");
+            delay(1000);   // Delay to allow the message to be published
             ESP.restart(); // Reboot to apply the new firmware
         }
         else
