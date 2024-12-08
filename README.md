@@ -19,14 +19,21 @@ The project was created in PlatformIO 22.11.2024
 ## Testing
 You can send messages to the device in AWS IoT MQTT Test console. See `test` folder for examples.
 
-### Set LED color
-Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/leds` and payload:
+## Commands
+All commands are sent to the device using MQTT. Commands could be sent as general messages or personalized for a specific device by Client ID.
+The device subscribes to the following topics:
+- `int-cz-map/cmd/leds/#`
+- `int-cz-map/cmd/update/#`
+
+### Example of LEDs command
+Topic general: `int-cz-map/cmd/leds`
+Topic personalized: `int-cz-map/cmd/leds/AABBCC`
 ```json
 {
     "leds": [
         {
             "id": 1,
-            "cl": "00FF00",
+            "cl": "FFFFFF",
             "br": 100,
             "dr": 600,
             "ct": 2
@@ -35,8 +42,9 @@ Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/leds` and payload:
 }
 ```
 
-### Firmware Update via MQTT
-Use topic `interactive-cz-map/Interactive-CZ-Map-01/commands/update` and payload:
+### Example of FW Update command
+Topic general: `int-cz-map/cmd/update`
+Topic personalized: `int-cz-map/cmd/update/AABBCC`
 ```json
 {
     "firmware_url": "https://example.com/firmware.bin"
