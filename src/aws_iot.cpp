@@ -182,6 +182,10 @@ void maintainAWSConnection()
     if (client.loop())
         return;
 
+    // Do not attempt to reconnect if WiFi is not connected or ESP does not have assigned IP
+    if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == INADDR_NONE)
+        return;
+
     // If the client is not connected, attempt to reconnect
     Serial.println(F("AWS IoT client disconnected. Attempting to reconnect..."));
     connectToAWS();
