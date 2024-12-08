@@ -246,7 +246,7 @@ void publishStatus()
     JsonDocument doc;
 
     // Populate the JSON document with status information
-    doc["firmware_version"] = FIRMWARE_VERSION;
+    doc["fw_version"] = FIRMWARE_VERSION;
     doc["uptime"] = millis() / 1000;
     doc["reset_reason"] = esp_reset_reason();
     doc["wifi_ssid"] = WiFi.SSID();
