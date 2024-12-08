@@ -224,6 +224,7 @@ void initWiFiManager(const char *chipID)
     // Compose hostname from chipID and set it
     const char *hostname = (String(HOSTNAME_PREFIX) + "_" + String(chipID)).c_str();
     WiFi.setHostname(hostname);
+    Serial.printf("Hostname: %s\n", hostname);
 
     AsyncWebServer webServer(HTTP_PORT);
     AsyncDNSServer dnsServer;
