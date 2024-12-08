@@ -74,6 +74,9 @@ void startProgressIndication()
     // Pause the task to prevent concurrent access
     vTaskSuspend(ledsTaskHandle);
 
+    // Set brightness
+    FastLED.setBrightness(PROGRESS_INDICATOR_BRIGHTNESS);
+
     // Reset all LEDs
     resetLedsStates();
 }
@@ -86,6 +89,9 @@ void startProgressIndication()
  */
 void stopProgressIndication()
 {
+    // Reset brightness
+    FastLED.setBrightness(255);
+
     // Reset all LEDs
     resetLedsStates();
 
@@ -110,9 +116,6 @@ void progressIndicator(uint8_t progress, CRGB color)
     // Calculate the number of LEDs to light up
     uint8_t totalLeds = sizeof(CIRCLE_LEDS_ARRAY) / sizeof(CIRCLE_LEDS_ARRAY[0]);
     uint8_t ledsToLight = (progress * totalLeds) / 100;
-
-    // Update brightness based on PROGRESS_INDICATOR_BRIGHTNESS
-    color.nscale8_video(PROGRESS_INDICATOR_BRIGHTNESS);
 
     // Light up LEDs based on progress
     for (uint8_t i = 0; i < ledsToLight; i++)
