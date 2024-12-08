@@ -25,6 +25,29 @@ bool isDoubleResetDetected()
 }
 
 /**
+ * @brief Validates the reset reason of the ESP device.
+ *
+ * This function checks the reset reason of the ESP device and returns true if the reset reason
+ * is due to a power-on event (ESP_RST_POWERON). Otherwise, it returns false.
+ * This prevents the Double Reset Detection from being triggered on other reset reasons,
+ * for example after a firmware update.
+ *
+ * @return true if the reset reason is ESP_RST_POWERON, false otherwise.
+ */
+bool validateResetReason()
+{
+    esp_reset_reason_t resetReason = esp_reset_reason();
+    if (resetReason == ESP_RST_POWERON)
+    {
+        Serial.println(F("ESP32 reset reason is ESP_RST_POWERON"));
+        return true;
+    }
+
+    Serial.printf("ESP32 reset reason is %d\n", resetReason);
+    return false;
+}
+
+/**
  * @brief Writes the flag to the filesystem.
  *
  * @param flag The flag value to write.
@@ -73,6 +96,17 @@ void drdTask(void *pvParameters)
         return;
     }
 
+    // Check if the reset reason is valid
+    if (!validateResetReason())
+    {
+        Serial.println("Invalid reset reason - skipping Double Reset Detection");
+        // Clear flag
+        writeFlag(DRD_FLAG_CLEAR);
+        // Delete the task
+        vTaskDelete(NULL);
+        return;
+    }
+
     // Check if flag is set
     if (isFlagSetInFS())
     {
@@ -91,7 +125,7 @@ void drdTask(void *pvParameters)
         writeFlag(DRD_FLAG_SET);
     }
 
-    // Delay for the timeout duration
+    // Wait for the timeout
     vTaskDelay(pdMS_TO_TICKS(drdTimeout));
 
     // Clear flag after timeout
