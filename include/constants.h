@@ -22,7 +22,7 @@
 #define HOSTNAME_PREFIX "Interactive-CZ-Map"
 
 // Firmware version of the Interactive CZ Map project
-#define FIRMWARE_VERSION "0.0.1"
+#define FIRMWARE_VERSION "1.0.0"
 
 // Timeout for detecting double reset (used to manually enter Config Portal)
 #define DRD_TIMEOUT 2000
