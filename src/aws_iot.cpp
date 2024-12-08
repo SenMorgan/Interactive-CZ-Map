@@ -112,7 +112,7 @@ void initAWS(const char *id, size_t idLength)
  */
 void connectToAWS()
 {
-    static uint32_t reconnectDelay = RECONNECT_INITIAL_DELAY;
+    static uint32_t reconnectDelay = 0;
     static uint32_t lastReconnectAttempt = 0;
 
     // Indicate connection attempt
@@ -125,46 +125,44 @@ void connectToAWS()
         return;
     }
 
-    // Attempt to connect to AWS IoT indefinitely
-    if (!client.connect(clientId))
+    uint32_t timeNow = millis();
+
+    // Attempt to connect only if the delay has passed
+    if (!client.connected() && (timeNow - lastReconnectAttempt >= reconnectDelay))
     {
-        uint32_t timeNow = millis();
-        // Check if the last reconnection attempt was too soon
-        if (timeNow - lastReconnectAttempt >= reconnectDelay)
+        lastReconnectAttempt = timeNow;
+
+        if (client.connect(clientId))
         {
-            // Connection failed - retry after delay
+            // Connection successful
+            Serial.println(F("Connected to AWS IoT"));
+            reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
+
+            // Subscribe to the generic MQTT topics
+            client.subscribe(MQTT_SUB_TOPIC_LEDS);
+            client.subscribe(MQTT_SUB_TOPIC_UPDATE);
+
+            // Subscribe to device-specific MQTT topics
+            client.subscribe(ledsSubTopic);
+            client.subscribe(updateSubTopic);
+
+            // Publish the device status after successful connection
+            publishStatus();
+
+            // Indicate connection success
+            circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+        }
+        else
+        {
+            // Connection failed - apply exponential backoff
             Serial.printf("Connection to AWS IoT failed, rc=%d\n", client.state());
             Serial.printf("Retrying in %lu ms\n", reconnectDelay);
 
-            // Exponential backoff with a limit
             if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
                 reconnectDelay *= 2;
             else
                 reconnectDelay = RECONNECT_MAX_DELAY;
-
-            // Update the last reconnection attempt time
-            lastReconnectAttempt = timeNow;
         }
-    }
-    else
-    {
-        // Connection successful
-        Serial.println(F("Connected to AWS IoT"));
-        reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
-
-        // Subscribe to the generic MQTT topics
-        client.subscribe(MQTT_SUB_TOPIC_LEDS);
-        client.subscribe(MQTT_SUB_TOPIC_UPDATE);
-
-        // Subscribe to device-specific MQTT topics
-        client.subscribe(ledsSubTopic);
-        client.subscribe(updateSubTopic);
-
-        // Publish the device status after successful connection
-        publishStatus();
-
-        // Indicate connection success
-        circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
     }
 }
 
