@@ -24,6 +24,9 @@
 // Firmware version of the Interactive CZ Map project
 #define FIRMWARE_VERSION "0.0.1"
 
+// Timeout for detecting double reset (used to manually enter Config Portal)
+#define DRD_TIMEOUT 5000
+
 // ============================================================================
 // MQTT Configuration
 // ============================================================================

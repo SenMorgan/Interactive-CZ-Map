@@ -19,9 +19,6 @@
 #define USE_STATIC_IP_CONFIG_IN_CP false
 #include <ESPAsync_WiFiManager.h> //https://github.com/khoih-prog/ESPAsync_WiFiManager
 
-// Timeout for detecting double reset (used to manually enter Config Portal)
-#define DRD_TIMEOUT 5000
-
 #define CONFIG_FILENAME F("/wifi_cred.dat")
 
 #define MIN_AP_PASSWORD_SIZE 8
