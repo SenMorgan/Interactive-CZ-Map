@@ -1,12 +1,18 @@
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
 #include <FastLED.h>
-#include "leds.h"
 #include "constants.h"
+#include "leds.h"
 
 // Task parameters
 #define LEDS_TASK_FREQUENCY_HZ (100U)
 #define LEDS_TASK_STACK_SIZE   (2 * 1024U)
 #define LEDS_TASK_PRIORITY     (tskIDLE_PRIORITY + 1)
 #define LEDS_TASK_CORE         1 // Core 0 is used by the WiFi
+
+// Defines how many commands can be queued for each LED
+#define LED_STATES_QUEUE_LENGTH 10
 
 // Circle effect parameters
 #define CIRCLE_EFFECT_BRIGHTNESS      50
@@ -26,17 +32,18 @@ enum FadeDirection
     FADE_OUT
 };
 
-// Struct to hold the state of an individual LED
+// Structure to hold the state of an individual LED
 struct LedState
 {
-    uint8_t brightness = 0;             // Brightness level (0-255)
-    uint16_t fadeDuration = 0;          // Duration of the fade effect in milliseconds
-    int16_t fadeCycles = 0;             // Number of times to perform the effect (-1 for infinite)
-    CRGB color = CRGB::Black;           // Color of the LED
-    bool isFading = false;              // Flag to indicate if the LED is currently fading
-    bool useFadeIn = true;              // Flag to indicate if the LED should fade in or just fade out
+    uint8_t brightness = 0;             // Current brightness level
+    uint16_t fadeDuration = 0;          // Current fade duration
+    int16_t fadeCycles = 0;             // Remaining fade cycles
+    CRGB color = CRGB::Black;           // Current color
+    bool isFading = false;              // Is the LED currently fading
+    bool useFadeIn = true;              // Should the LED fade in
     uint32_t startTime = 0;             // Time when the effect started
     FadeDirection direction = FADE_OUT; // Current fade direction
+    QueueHandle_t commandQueue;         // Queue to hold the commands for the LED
 };
 
 // Array to hold the state of all LEDs
@@ -44,6 +51,9 @@ LedState ledStates[LEDS_COUNT];
 
 // Variable to store task handle
 TaskHandle_t ledsTaskHandle = NULL;
+
+// Forward declarations
+void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
 
 /**
  * @brief Resets the states of all LEDs.
@@ -56,10 +66,23 @@ TaskHandle_t ledsTaskHandle = NULL;
  */
 void resetLedsStates()
 {
+    FastLED.clear();
+
     for (uint8_t i = 0; i < LEDS_COUNT; i++)
     {
         leds[i] = CRGB::Black;
-        ledStates[i] = LedState();
+        ledStates[i].brightness = 0;
+        ledStates[i].fadeDuration = 0;
+        ledStates[i].fadeCycles = 0;
+        ledStates[i].color = CRGB::Black;
+        ledStates[i].isFading = false;
+        ledStates[i].useFadeIn = true;
+        ledStates[i].startTime = 0;
+        ledStates[i].direction = FADE_OUT;
+
+        // Empty the commands queue
+        if (ledStates[i].commandQueue != NULL)
+            xQueueReset(ledStates[i].commandQueue);
     }
 }
 
@@ -197,6 +220,37 @@ void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fa
 }
 
 /**
+ * @brief Pushes a command to the specified LED's command queue.
+ *
+ * This function checks if the provided LED index is within the valid range.
+ * If the index is out of bounds, it logs an error message and returns.
+ * Otherwise, it retrieves the LED state from the array and attempts to send
+ * the command to the LED's command queue. If the queue is full, it logs an
+ * error message.
+ *
+ * @param index The index of the LED to which the command should be sent.
+ * @param command The command to be sent to the LED.
+ */
+void pushLedCommand(uint8_t index, LedCommand command)
+{
+    // Check if index is within bounds
+    if (index >= LEDS_COUNT)
+    {
+        Serial.printf("Index [%d] is out of bounds [0, %d]\n", index, LEDS_COUNT - 1);
+        return;
+    }
+
+    // Get the LED state from the array
+    LedState &state = ledStates[index];
+
+    // Send the command to the queue
+    if (xQueueSend(state.commandQueue, &command, 0) != pdTRUE)
+    {
+        Serial.printf("LED %d command queue is full\n", index);
+    }
+}
+
+/**
  * @brief Refreshes the state of the LEDs by updating their colors and brightness based on the current time and their respective states.
  *
  * This function iterates over all LEDs, checks their active state, and updates their colors and brightness according to the fade effect.
@@ -206,7 +260,7 @@ void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fa
  */
 void refreshLeds()
 {
-    unsigned long currentTime = millis();
+    uint32_t currentTime = millis();
 
     // Iterate over all LEDs
     for (uint8_t i = 0; i < LEDS_COUNT; i++)
@@ -218,7 +272,7 @@ void refreshLeds()
         if (state.isFading)
         {
             // Calculate the elapsed time since the fade effect started
-            unsigned long elapsed = currentTime - state.startTime;
+            uint32_t elapsed = currentTime - state.startTime;
 
             // Check if the elapsed time is less than the fade duration
             if (state.fadeDuration > 0 && elapsed < state.fadeDuration)
@@ -297,6 +351,16 @@ void refreshLeds()
             else
                 leds[i].nscale8_video(state.brightness);
         }
+        else
+        {
+            // If all fade cycles are completed, try to get a new command from the queue
+            LedCommand command;
+            if (xQueueReceive(state.commandQueue, &command, 0) == pdTRUE)
+            {
+                // Set new command without fading in
+                setLed(i, command.brightness, command.fadeDuration, command.fadeCycles, command.color, false);
+            }
+        }
     }
 
     // Update the LED strip after all calculations
@@ -318,6 +382,16 @@ void ledsTask(void *pvParameters)
 
     // Initialize LED strip
     FastLED.addLeds<WS2812B, LEDS_PIN, GRB>(leds, LEDS_COUNT);
+
+    // Initialize LEDs command queues
+    for (uint8_t i = 0; i < LEDS_COUNT; i++)
+    {
+        ledStates[i].commandQueue = xQueueCreate(LED_STATES_QUEUE_LENGTH, sizeof(LedCommand));
+        if (ledStates[i].commandQueue == NULL)
+        {
+            Serial.printf("Failed to create commandQueue for LED %d\n", i);
+        }
+    }
 
     // Set all LEDs to off
     resetLedsStates();

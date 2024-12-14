@@ -29,6 +29,8 @@ The device subscribes to the following topics:
 ### Example of LEDs command
 Topic general: `int-cz-map/cmd/leds`
 Topic personalized: `int-cz-map/cmd/leds/AABBCC`
+
+### Single sequence for single LED
 ```json
 {
     "leds": [
@@ -37,6 +39,69 @@ Topic personalized: `int-cz-map/cmd/leds/AABBCC`
             "cl": "FFFFFF",
             "br": 100,
             "dr": 600,
+            "ct": 2
+        }
+    ]
+}
+```
+
+### Multiple sequences for single LED
+```json
+{
+    "leds": [
+        {
+            "id": 36,
+            "cl": "FF0000",
+            "br": 50,
+            "dr": 600,
+            "ct": 2
+        },
+        {
+            "id": 36,
+            "cl": "00FF00",
+            "br": 100,
+            "dr": 300,
+            "ct": 2
+        },
+        {
+            "id": 36,
+            "cl": "0000FF",
+            "ct": 5
+        }
+    ]
+}
+```
+
+### Single sequence for multiple LEDs
+```json
+{
+    "leds": [
+        {
+            "id": 1,
+            "cl": "00FFFF",
+            "br": 100,
+            "dr": 600,
+            "ct": 2
+        },
+        {
+            "id": 2,
+            "cl": "FF0000",
+            "br": 50,
+            "dr": 300,
+            "ct": 2
+        },
+        {
+            "id": 3,
+            "cl": "00FF00",
+            "br": 100,
+            "dr": 600,
+            "ct": 2
+        },
+        {
+            "id": 4,
+            "cl": "FF00FF",
+            "br": 50,
+            "dr": 300,
             "ct": 2
         }
     ]

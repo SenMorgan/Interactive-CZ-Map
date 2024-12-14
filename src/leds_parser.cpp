@@ -395,7 +395,8 @@ void parseAndSetSingleLed(uint16_t arrayIndex, JsonObject &ledConfig, int16_t gl
         return; // Skip invalid LED configurations
 
     // Set the LED with the extracted parameters. The LED ID is 1-based, so we subtract 1
-    setLed(ledId - 1, brightness, duration, count, ledColor, false);
+    LedCommand command = {(uint8_t)brightness, duration, count, ledColor};
+    pushLedCommand(ledId - 1, command);
 
     // Optional: Log the LED configuration for debugging
     // Serial.printf("LED %d - Brightness: %d, Duration: %d, Count: %d, Color: (%d, %d, %d)\n",
