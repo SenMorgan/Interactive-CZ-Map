@@ -395,7 +395,7 @@ void parseAndSetSingleLed(uint16_t arrayIndex, JsonObject &ledConfig, int16_t gl
         return; // Skip invalid LED configurations
 
     // Set the LED with the extracted parameters. The LED ID is 1-based, so we subtract 1
-    LedCommand command = {(uint8_t)brightness, duration, count, ledColor};
+    LedCommand command = {(uint8_t)brightness, duration, (int16_t)count, ledColor};
     pushLedCommand(ledId - 1, command);
 
     // Optional: Log the LED configuration for debugging
