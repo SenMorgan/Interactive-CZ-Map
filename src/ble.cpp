@@ -1,48 +1,82 @@
+
 /**
- *  Continuous Scan Example
+ *  NimBLE_Async_client Demo:
  *
- *  This example demonstrates how to continuously scan for BLE devices.
- *  When devices are found the onDiscovered and onResults callbacks will be called with the device data.
- *  The scan will not store the results, only the callbacks will be used
- *  When the scan timeout is reached the onScanEnd callback will be called and the scan will be restarted.
- *  This will clear the duplicate cache in the controller and allow the same devices to be reported again.
+ *  Demonstrates asynchronous client operations.
  *
- *  Created: on March 24 2020
+ *  Created: on November 4, 2024
  *      Author: H2zero
  */
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
-#include "ble.h"
 
-static constexpr uint32_t scanTimeMs = 30 * 1000; // 30 seconds scan time.
+#define BLE_BUTTON_NAME "AB Shutter3"
 
-class scanCallbacks : public NimBLEScanCallbacks {
-    /** Initial discovery, advertisement data only. */
-    void onDiscovered(const NimBLEAdvertisedDevice* advertisedDevice) override {
-        printf("Discovered Device: %s\n", advertisedDevice->toString().c_str());
+static constexpr uint32_t scanTimeMs = 5 * 1000;
+
+class ClientCallbacks : public NimBLEClientCallbacks
+{
+    void onConnect(NimBLEClient *pClient) override
+    {
+        Serial.printf("Connected to: %s\n", pClient->getPeerAddress().toString().c_str());
     }
 
-    /**
-     *  If active scanning the result here will have the scan response data.
-     *  If not active scanning then this will be the same as onDiscovered.
-     */
-    void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
-        printf("Device result: %s\n", advertisedDevice->toString().c_str());
+    void onDisconnect(NimBLEClient *pClient, int reason) override
+    {
+        Serial.printf("%s Disconnected, reason = %d - Starting scan\n", pClient->getPeerAddress().toString().c_str(), reason);
+        NimBLEDevice::getScan()->start(scanTimeMs);
+    }
+} clientCallbacks;
+
+class ScanCallbacks : public NimBLEScanCallbacks
+{
+    void onResult(const NimBLEAdvertisedDevice *advertisedDevice) override
+    {
+        // Serial.printf("Advertised Device found: %s\n", advertisedDevice->toString().c_str());
+        if (advertisedDevice->haveName() && advertisedDevice->getName() == BLE_BUTTON_NAME)
+        {
+            Serial.printf("Found Our Device\n");
+
+            /** Async connections can be made directly in the scan callbacks */
+            auto pClient = NimBLEDevice::getDisconnectedClient();
+            if (!pClient)
+            {
+                pClient = NimBLEDevice::createClient(advertisedDevice->getAddress());
+                if (!pClient)
+                {
+                    Serial.printf("Failed to create client\n");
+                    return;
+                }
+            }
+
+            pClient->setClientCallbacks(&clientCallbacks, false);
+            if (!pClient->connect(true, true, false))
+            { // delete attributes, async connect, no MTU exchange
+                NimBLEDevice::deleteClient(pClient);
+                Serial.printf("Failed to connect\n");
+                return;
+            }
+        }
     }
 
-    void onScanEnd(const NimBLEScanResults& results, int reason) override {
-        printf("Scan ended reason = %d; restarting scan\n", reason);
-        NimBLEDevice::getScan()->start(scanTimeMs, false, true);
+    void onScanEnd(const NimBLEScanResults &results, int reason) override
+    {
+        Serial.printf("Scan Ended\n");
+        NimBLEDevice::getScan()->start(scanTimeMs);
     }
 } scanCallbacks;
 
-void setupBle() {
-    NimBLEDevice::init("");                         // Initialize the device, you can specify a device name if you want.
-    NimBLEScan* pBLEScan = NimBLEDevice::getScan(); // Create the scan object.
-    pBLEScan->setScanCallbacks(&scanCallbacks, false); // Set the callback for when devices are discovered, no duplicates.
-    pBLEScan->setActiveScan(true);          // Set active scanning, this will get more data from the advertiser.
-    pBLEScan->setMaxResults(0);             // Do not store the scan results, use callback only.
-    pBLEScan->start(scanTimeMs, false, true); // duration, not a continuation of last scan, restart to get all devices again.
-    printf("Scanning...\n");
+void setupBle()
+{
+    Serial.printf("Starting NimBLE Async Client\n");
+    NimBLEDevice::init("Async-Client");
+    NimBLEDevice::setPower(3); /** +3db */
+
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    pScan->setScanCallbacks(&scanCallbacks);
+    pScan->setInterval(45);
+    pScan->setWindow(45);
+    pScan->setActiveScan(true);
+    pScan->start(scanTimeMs);
 }
