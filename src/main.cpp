@@ -15,11 +15,11 @@ void setup()
     Serial.print(F("Initializing Interactive CZ Map device with Chip ID: "));
     Serial.println(chipID);
 
+    // Initialize BLE
+    bleTaskInit();
+
     // Initialize LEDs control task
     ledsTaskInit();
-
-    // Initialize BLE
-    setupBle();
 
     // Initialize WiFi Manager
     initWiFiManager(chipID);

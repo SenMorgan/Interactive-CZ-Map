@@ -1,6 +1,6 @@
 #ifndef BLE_H
 #define BLE_H
 
-void setupBle();
+void bleTaskInit();
 
 #endif // BLE_H
