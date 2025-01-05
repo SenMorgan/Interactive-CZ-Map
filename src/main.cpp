@@ -1,9 +1,9 @@
 #include <WiFi.h>
 #include "constants.h"
+#include "ble.h"
 #include "aws_iot.h"
 #include "leds.h"
 #include "wifi_manager.h"
-
 #include "esp32_utils.h"
 
 void setup()
@@ -15,8 +15,13 @@ void setup()
     Serial.print(F("Initializing Interactive CZ Map device with Chip ID: "));
     Serial.println(chipID);
 
-    // Initialize modules
+    // Initialize LEDs control task
     ledsTaskInit();
+
+    // Initialize BLE
+    setupBle();
+
+    // Initialize WiFi Manager
     initWiFiManager(chipID);
 
     // Initialize AWS IoT with the Thing Name if defined, otherwise use the Chip ID
