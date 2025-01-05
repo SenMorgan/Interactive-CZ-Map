@@ -1,9 +1,10 @@
-#include <Arduino.h>
 #include <NimBLEDevice.h>
+#include "ble.h"
+#include "leds.h"
 
 // Task parameters
 #define BLE_TASK_STACK_SIZE (8 * 1024U)
-#define BLE_TASK_PRIORITY   (tskIDLE_PRIORITY + 2)
+#define BLE_TASK_PRIORITY   (tskIDLE_PRIORITY)
 #define BLE_TASK_CORE       CONFIG_BT_NIMBLE_PINNED_TO_CORE // Use the core that NimBLE is pinned to
 
 const char HID_SERVICE[] = "1812";     // Human Interface Device Service
@@ -70,10 +71,16 @@ void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
     if (length == 2 && pData[0] == 0x02 && pData[1] == 0x00)
     {
         Serial.println("Button pressed");
+
+        // Blink with LEDs to indicate the button press
+        circleLedEffect(CRGB::White, 100, LOOP_INDEFINITELY);
     }
     else if (length == 2 && pData[0] == 0x00 && pData[1] == 0x00)
     {
         Serial.println("Button released");
+
+        // Stop the LED effect
+        circleLedEffect(CRGB::Black, 1, 1);
     }
     else
     {
