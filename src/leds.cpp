@@ -12,7 +12,13 @@
 #define LEDS_TASK_CORE         1 // Core 0 is used by the WiFi
 
 // Defines how many commands can be queued for each LED
-#define LED_STATES_QUEUE_LENGTH 10
+#define LED_STATES_QUEUE_LENGTH 20
+
+// Define the queue length threshold at which fade duration reduction begins
+#define QUEUE_LENGTH_REDUCTION_THRESHOLD 2
+
+// Define the queue length threshold at which fade duration should be reduced to minimum
+#define QUEUE_LENGTH_REDUCTION_MAX 10
 
 // Circle effect parameters
 #define CIRCLE_EFFECT_BRIGHTNESS      50
@@ -242,6 +248,32 @@ void pushLedCommand(uint8_t index, LedCommand command)
 
     // Get the LED state from the array
     LedState &state = ledStates[index];
+
+    // Get the number of messages currently in the queue
+    UBaseType_t messageCount = uxQueueMessagesWaiting(state.commandQueue);
+
+    // Check if the queue length is above the threshold
+    if (messageCount > QUEUE_LENGTH_REDUCTION_THRESHOLD)
+    {
+        const uint16_t ORIGINAL_FADE_DURATION = command.fadeDuration;
+        const uint8_t MAX_QUEUE_LENGTH = LED_STATES_QUEUE_LENGTH;                // Maximum queue length
+        uint8_t overQueueSize = messageCount - QUEUE_LENGTH_REDUCTION_THRESHOLD; // Number of messages over the threshold
+
+        // Calculate reduction ratio (from 0 to 1)
+        float reductionRatio = (float)overQueueSize / (float)QUEUE_LENGTH_REDUCTION_MAX;
+        reductionRatio = reductionRatio > 1.0f ? 1.0f : reductionRatio; // Constrain to 1.0
+        uint16_t reductionAmount = (ORIGINAL_FADE_DURATION - MIN_FADE_DURATION) * reductionRatio;
+
+        // Adjust the fade duration
+        uint16_t adjustedFadeDuration = ORIGINAL_FADE_DURATION - reductionAmount;
+
+        // Ensure fade duration is not less than minimum
+        adjustedFadeDuration = adjustedFadeDuration < MIN_FADE_DURATION ? MIN_FADE_DURATION : adjustedFadeDuration;
+
+        // Update the command's fadeDuration
+        command.fadeDuration = adjustedFadeDuration;
+        Serial.printf("Reduced fade duration for LED %d to %d ms\n", index, adjustedFadeDuration);
+    }
 
     // Send the command to the queue
     if (xQueueSend(state.commandQueue, &command, 0) != pdTRUE)

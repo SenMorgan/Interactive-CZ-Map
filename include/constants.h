@@ -47,8 +47,9 @@
 // LED Effect Configuration
 // ============================================================================
 
-// Maximum fade effect duration in milliseconds
+// Maximum and minimum fade effect duration in milliseconds
 #define MAX_FADE_DURATION 5000
+#define MIN_FADE_DURATION 200
 
 // Maximum number of fade effect repeats
 #define MAX_FADE_REPEATS 100
