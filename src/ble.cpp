@@ -34,7 +34,7 @@ class ClientCallbacks : public NimBLEClientCallbacks
         if (buttonClicked)
         {
             buttonClicked = false;
-            circleLedEffect(CRGB::Black, 1, 1);
+            blinkWithSingleLed(devConfig.baseLedId, CRGB::Black, 1, 1);
         }
 
         // Notify the bleTask to resume scanning
@@ -90,8 +90,8 @@ void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
         Serial.println("Button pressed");
         buttonClicked = true;
 
-        // Blink with LEDs to indicate the button press
-        circleLedEffect(CRGB::White, 100, LOOP_INDEFINITELY);
+        // Blink with base LED to indicate the button press
+        blinkWithSingleLed(devConfig.baseLedId, CRGB::White, 100, LOOP_INDEFINITELY);
     }
     else if (length == 2 && pData[0] == 0x00 && pData[1] == 0x00)
     {
@@ -99,7 +99,7 @@ void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
         buttonClicked = false;
 
         // Stop the LED effect
-        circleLedEffect(CRGB::Black, 1, 1);
+        blinkWithSingleLed(devConfig.baseLedId, CRGB::Black, 1, 1);
     }
     else
     {

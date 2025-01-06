@@ -169,6 +169,20 @@ void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
 }
 
 /**
+ * @brief Blinks a single LED with the specified color and fade parameters.
+ *
+ * @param index The index of the LED to blink.
+ * @param color The color to set the LED to.
+ * @param fadeDuration The duration of the fade effect in milliseconds.
+ * @param fadeCycles The number of fade cycles to perform. A negative value indicates infinite cycles.
+ */
+void blinkWithSingleLed(uint8_t index, CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
+{
+    // Set the LED to the desired color
+    setLed(index, 255, fadeDuration, fadeCycles, color);
+}
+
+/**
  * @brief Sets the state of an LED at a specified index. If any of the parameters are out of bounds,
  * then the parameters will be ignored and a message will be printed to the serial monitor.
  *

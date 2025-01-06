@@ -22,5 +22,6 @@ void stopProgressIndication();
 void progressIndicator(uint8_t progress, CRGB color);
 void pushLedCommand(uint8_t index, LedCommand command);
 void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles);
+void blinkWithSingleLed(uint8_t index, CRGB color, uint16_t fadeDuration, int16_t fadeCycles);
 
 #endif // LEDS_H
