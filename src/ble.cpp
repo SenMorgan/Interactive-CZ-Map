@@ -210,7 +210,6 @@ void bleTask(void *pvParameters)
     pScan->setScanCallbacks(&scanCallbacks, false);
     pScan->setInterval(100);
     pScan->setWindow(100);
-    pScan->setActiveScan(true);
 
     // Initialize semaphore
     disconnectSemaphore = xSemaphoreCreateBinary();
