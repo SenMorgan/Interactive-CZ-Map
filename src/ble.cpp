@@ -1,6 +1,7 @@
 #include <NimBLEDevice.h>
-#include "ble.h"
+#include "config_parser.h"
 #include "leds.h"
+#include "ble.h"
 
 // Task parameters
 #define BLE_TASK_STACK_SIZE (8 * 1024U)
@@ -46,13 +47,22 @@ class ScanCallbacks : public NimBLEScanCallbacks
 {
     void onResult(const NimBLEAdvertisedDevice *advertisedDevice) override
     {
-        if (advertisedDevice->getAppearance() == APPEARANCE_HID_KEYBOARD &&
-            advertisedDevice->isAdvertisingService(NimBLEUUID(HID_SERVICE)))
+        // Check if device address matches the HID device from the configuration
+        if (advertisedDevice->getAddress().equals(devConfig.bleHidAddress))
         {
-            Serial.printf("Found HID Device: %s\n", advertisedDevice->toString().c_str());
-            NimBLEDevice::getScan()->stop();
-            advDevice = advertisedDevice;
-            // Connection will be handled in bleTask
+            // Check if the device is a HID keyboard
+            if (advertisedDevice->getAppearance() == APPEARANCE_HID_KEYBOARD &&
+                advertisedDevice->isAdvertisingService(NimBLEUUID(HID_SERVICE)))
+            {
+                Serial.printf("Found HID Device: %s\n", advertisedDevice->toString().c_str());
+                NimBLEDevice::getScan()->stop();
+                advDevice = advertisedDevice;
+                // Connection will be handled in bleTask
+            }
+            else
+            {
+                Serial.println("Found device, but it is not a HID device");
+            }
         }
     }
 

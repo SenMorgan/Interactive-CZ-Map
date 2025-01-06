@@ -2,12 +2,13 @@
 #define CONFIG_PARSER_H
 
 #include <ArduinoJson.h>
+#include <NimBLEAddress.h>
 
 // Structure to hold device configuration
 struct DevConfig
 {
     String customerName;
-    String bleHidAddress;
+    NimBLEAddress bleHidAddress;
     int baseLedId;
 };
 
