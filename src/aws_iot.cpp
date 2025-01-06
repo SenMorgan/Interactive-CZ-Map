@@ -5,6 +5,7 @@
 #include "leds_parser.h"
 #include "leds.h"
 #include "firmware_update.h"
+#include "config_parser.h"
 
 // Interval for publishing device status (in milliseconds)
 #define STATUS_PUBLISH_INTERVAL 60 * 1000
@@ -33,6 +34,7 @@ const char *clientId = NULL;
 // Variables to store device-specific MQTT topics to subscribe
 char ledsSubTopic[sizeof(MQTT_SUB_TOPIC_LEDS) + MAX_CLIENT_ID_LENGTH];
 char updateSubTopic[sizeof(MQTT_SUB_TOPIC_UPDATE) + MAX_CLIENT_ID_LENGTH];
+char devConfigSubTopic[sizeof(MQTT_SUB_TOPIC_DEV_CONFIG) + MAX_CLIENT_ID_LENGTH];
 
 // Variables to store device-specific MQTT topics to publish
 char statusPubTopic[sizeof(MQTT_PUB_TOPIC_STATUS) + MAX_CLIENT_ID_LENGTH];
@@ -95,6 +97,8 @@ void initAWS(const char *id, size_t idLength)
     // Compose topics to subscribe with the client ID
     snprintf(ledsSubTopic, sizeof(ledsSubTopic), "%s/%s", MQTT_SUB_TOPIC_LEDS, clientId);
     snprintf(updateSubTopic, sizeof(updateSubTopic), "%s/%s", MQTT_SUB_TOPIC_UPDATE, clientId);
+    snprintf(devConfigSubTopic, sizeof(devConfigSubTopic), "%s/%s", MQTT_SUB_TOPIC_DEV_CONFIG, clientId);
+    Serial.println("Device configuration topic: " + String(devConfigSubTopic));
 
     // Compose topics to publish with the client ID
     snprintf(statusPubTopic, sizeof(statusPubTopic), "%s/%s", MQTT_PUB_TOPIC_STATUS, clientId);
@@ -149,6 +153,7 @@ void connectToAWS()
             // Subscribe to device-specific MQTT topics
             client.subscribe(ledsSubTopic);
             client.subscribe(updateSubTopic);
+            client.subscribe(devConfigSubTopic);
 
             // Publish the device status after successful connection
             publishStatus();
@@ -360,6 +365,8 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
         setLedsFromJsonDoc(doc);
     else if (strcmp(topic, updateSubTopic) == 0 || strcmp(topic, MQTT_SUB_TOPIC_UPDATE) == 0)
         handleUpdateCommand(doc);
+    else if (strcmp(topic, devConfigSubTopic) == 0)
+        parseConfig(doc);
     else
         Serial.printf("Unknown topic received: %s\n", topic);
 }

@@ -39,6 +39,9 @@
 #define MQTT_SUB_TOPIC_LEDS   MQTT_BASE_TOPIC "/cmd/leds"
 #define MQTT_SUB_TOPIC_UPDATE MQTT_BASE_TOPIC "/cmd/update"
 
+// Device-specific configuration topic followed by the client ID
+#define MQTT_SUB_TOPIC_DEV_CONFIG MQTT_BASE_TOPIC "/config"
+
 // Topics published by the device followed by the client ID
 #define MQTT_PUB_TOPIC_STATUS        MQTT_BASE_TOPIC "/status/device"
 #define MQTT_PUB_TOPIC_UPDATE_STATUS MQTT_BASE_TOPIC "/status/update"
