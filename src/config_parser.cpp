@@ -25,10 +25,10 @@ void parseConfig(JsonDocument &doc)
     }
 
     if (doc[JSON_BASE_LED_ID].is<int>())
-        devConfig.baseLedId = doc[JSON_BASE_LED_ID].as<int>();
+        devConfig.baseLedId = doc[JSON_BASE_LED_ID].as<int>() - 1; // Convert to zero-based index
 
     // Print the configuration for debugging
-    Serial.printf("Settings received:\nCustomer Name: %s\nBLE HID Address: %s\nBase LED ID: %d\n",
+    Serial.printf("Settings received:\nCustomer Name: %s\nBLE HID Address: %s\nBase LED index: %d\n",
                   devConfig.customerName.c_str(),
                   devConfig.bleHidAddress.toString().c_str(),
                   devConfig.baseLedId);
