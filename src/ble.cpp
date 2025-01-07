@@ -1,6 +1,6 @@
 #include <NimBLEDevice.h>
 #include "config_parser.h"
-#include "leds.h"
+#include "aws_iot.h"
 #include "ble.h"
 
 // Task parameters
@@ -34,7 +34,7 @@ class ClientCallbacks : public NimBLEClientCallbacks
         if (buttonClicked)
         {
             buttonClicked = false;
-            blinkWithSingleLed(devConfig.baseLedId, CRGB::Black, 1, 1);
+            broadcastLedBlink(devConfig.baseLedId, "000000", 1);
         }
 
         // Notify the bleTask to resume scanning
@@ -91,7 +91,7 @@ void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
         buttonClicked = true;
 
         // Blink with base LED to indicate the button press
-        blinkWithSingleLed(devConfig.baseLedId, CRGB::White, 100, LOOP_INDEFINITELY);
+        broadcastLedBlink(devConfig.baseLedId, "FFFFFF", 200, 5);
     }
     else if (length == 2 && pData[0] == 0x00 && pData[1] == 0x00)
     {
@@ -99,7 +99,7 @@ void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
         buttonClicked = false;
 
         // Stop the LED effect
-        blinkWithSingleLed(devConfig.baseLedId, CRGB::Black, 1, 1);
+        broadcastLedBlink(devConfig.baseLedId, "000000", 1);
     }
     else
     {

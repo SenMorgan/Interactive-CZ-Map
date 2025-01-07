@@ -328,6 +328,37 @@ void publishFirmwareUpdateResult(bool success, const char *message)
 }
 
 /**
+ * @brief Broadcasts a command to blink an LED with specified parameters.
+ *
+ * This function creates a JSON document containing the LED command and publishes it to an MQTT topic.
+ *
+ * @param ledId The ID of the LED to blink.
+ * @param colorHex The color of the LED in hexadecimal format.
+ * @param duration The duration of each blink in milliseconds. Default is 1.
+ * @param count The number of times the LED should blink. Default is 1.
+ */
+void broadcastLedBlink(uint8_t ledId, String colorHex, uint16_t duration, uint16_t count)
+{
+    // Allocate the JSON document
+    JsonDocument doc;
+
+    // Populate the JSON document with the LED command
+    JsonArray leds = doc["leds"].to<JsonArray>();
+    JsonObject led = leds.add<JsonObject>();
+    led["id"] = ledId;
+    led["cl"] = colorHex;
+
+    if (duration != 1)
+        led["dr"] = duration;
+
+    if (count != 1)
+        led["ct"] = count;
+
+    // Publish the LED command to the MQTT topic
+    publishJson(ledsSubTopic, doc);
+}
+
+/**
  * @brief Handles incoming IoT messages.
  *
  * This function is called whenever a new message arrives on a subscribed MQTT topic.
