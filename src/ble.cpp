@@ -85,7 +85,7 @@ void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
     Serial.printf("%s\n", str.c_str());
 
     // Handle button press/release
-    if (length == 2 && pData[0] == 0x02 && pData[1] == 0x00)
+    if (length == 2 && pData[0] != 0x00 && pData[1] == 0x00)
     {
         Serial.println("Button pressed");
         buttonClicked = true;
