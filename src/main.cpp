@@ -15,14 +15,14 @@ void setup()
     Serial.print(F("Initializing Interactive CZ Map device with Chip ID: "));
     Serial.println(chipID);
 
-    // Initialize BLE
-    bleTaskInit();
-
     // Initialize LEDs control task
     ledsTaskInit();
 
     // Initialize WiFi Manager
     initWiFiManager(chipID);
+
+    // Initialize BLE
+    bleTaskInit();
 
     // Initialize AWS IoT with the Thing Name if defined, otherwise use the Chip ID
 #ifdef THINGNAME
