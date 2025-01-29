@@ -178,7 +178,7 @@ void getDeviceInfo(JsonObject deviceInfo)
 {
     deviceInfo["identifiers"] = "Interactive-CZ-Map";
     deviceInfo["name"] = "Interactive CZ Map";
-    deviceInfo["model"] = "LaskaKit Interaktivní Mapa ČR";
+    deviceInfo["model"] = "Interactive CZ Map. More info: https://github.com/SenMorgan/Interactive-CZ-Map";
     deviceInfo["manufacturer"] = "SenMorgan";
 }
 
@@ -193,22 +193,19 @@ void getDeviceInfo(JsonObject deviceInfo)
  */
 void publishDiscoveryConfig(const char *clientId)
 {
+    #define TOPIC_BUFFER_SIZE 128
+
+    // Topic formats for sensor and switch configuration
     const char *stateConfigTopic = "homeassistant/sensor/int_cz_map/%s/config";
     const char *switchConfigTopic = "homeassistant/switch/int_cz_map/%s/config";
 
-    char topicBuffer[128]; // Buffer for storing the topic
-
-    // Create a device information that will be included in the sensor and switch configuration
-    JsonObject deviceInfo;
-    deviceInfo["identifiers"] = String(clientId);
-    deviceInfo["name"] = "Interactive CZ Map";
-    deviceInfo["model"] = "Interactive CZ Map. More info: https://github.com/SenMorgan/Interactive-CZ-Map";
-    deviceInfo["manufacturer"] = "SenMorgan";
+    // Buffer for storing the topic
+    char topicBuffer[TOPIC_BUFFER_SIZE];
 
     // Allocate the JSON document for sensor
     JsonDocument stateDoc;
-    stateDoc["name"] = "Interactive CZ Map Sensor";
-    stateDoc["unique_id"] = String(clientId) + "_int_cz_map_sensor";
+    stateDoc["name"] = "Sensor";
+    stateDoc["unique_id"] = String(clientId) + "_sensor";
     stateDoc["state_topic"] = statusPubTopic;
     stateDoc["value_template"] = "{{ value_json }}";
     getDeviceInfo(stateDoc["device"].to<JsonObject>()); // Add device information
@@ -219,8 +216,8 @@ void publishDiscoveryConfig(const char *clientId)
 
     // Allocate the JSON document for switch
     JsonDocument switchDoc;
-    switchDoc["name"] = "CZ Map Switch";
-    switchDoc["unique_id"] = String(clientId) + "_int_cz_map_switch";
+    switchDoc["name"] = "Enable";
+    switchDoc["unique_id"] = String(clientId) + "_enable";
     switchDoc["command_topic"] = enableSubTopic;
     switchDoc["state_topic"] = statusPubTopic;
     switchDoc["value_template"] = "{{ value_json.enabled }}";
