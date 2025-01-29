@@ -1,7 +1,9 @@
+#include <WiFi.h>
+#include "esp32_utils.h"
+#include <ArduinoJson.h>
+
 #include "ha_client.h"
 #include "constants.h"
-#include <ArduinoJson.h>
-#include <WiFi.h>
 
 // Initialize Wi-Fi and MQTT client
 WiFiClient haClientNet;
@@ -14,7 +16,7 @@ PubSubClient haClient(haClientNet);
 // Maximum delay between reconnection attempts to Home Assistant MQTT Broker (in milliseconds)
 #define RECONNECT_MAX_DELAY        10000
 // MQTT buffer size for handling larger messages
-#define MQTT_BUFFER_SIZE           8192
+#define MQTT_BUFFER_SIZE           512
 
 // Task parameters
 #define HA_TASK_STACK_SIZE (4 * 1024U)
@@ -22,17 +24,31 @@ PubSubClient haClient(haClientNet);
 #define HA_TASK_CORE       1 // Core 0 is used by the WiFi
 
 // MQTT topics
-const char *MAP_CONTROL_TOPIC = MQTT_BASE_TOPIC "/control";
-const char *MAP_STATE_TOPIC = MQTT_BASE_TOPIC "/status/device";
+#define MQTT_SUB_TOPIC_ENABLE MQTT_BASE_TOPIC "/cmd/enable"
+#define MQTT_PUB_TOPIC_STATUS MQTT_BASE_TOPIC "/status/device"
 
 // Last time the device status was published
 uint32_t lastHAPublishTime = 0;
 // Counter for the number of times the device was reconnecting to the Home Assistant MQTT Broker
 uint32_t haReconnectAttempts = 0;
 
+// Variables to store MQTT topics
+static char enableSubTopic[sizeof(MQTT_SUB_TOPIC_ENABLE) + CHIP_ID_LENGTH + 1];
+static char statusPubTopic[sizeof(MQTT_PUB_TOPIC_STATUS) + CHIP_ID_LENGTH + 1];
+
 // Indicates if the map is turned on (flashings allowed)
 bool mapState = true;
 
+// Forward declarations
+void publishStatusHA();
+
+/**
+ * @brief Handles incoming messages from the Home Assistant MQTT broker.
+ *
+ * @param topic The topic on which the message was received.
+ * @param payload The payload of the message.
+ * @param length The length of the payload.
+ */
 void haMessageHandler(char *topic, byte *payload, unsigned int length)
 {
     String message;
@@ -41,7 +57,7 @@ void haMessageHandler(char *topic, byte *payload, unsigned int length)
         message += (char)payload[i];
     }
 
-    if (String(topic) == MAP_CONTROL_TOPIC)
+    if (strcmp(topic, enableSubTopic) == 0)
     {
         if (message == "ON")
         {
@@ -53,6 +69,13 @@ void haMessageHandler(char *topic, byte *payload, unsigned int length)
             mapState = false;
             Serial.println("Map turned OFF");
         }
+        else
+        {
+            Serial.printf("Invalid message received on topic '%s': %s\n", topic, message.c_str());
+        }
+
+        // Publish the current status after receiving the enable command
+        publishStatusHA();
     }
 }
 
@@ -66,17 +89,15 @@ void haMessageHandler(char *topic, byte *payload, unsigned int length)
  */
 void publishJsonHA(const char *topic, const JsonDocument &doc)
 {
-#define BUFFER_SIZE 256 // Size of the buffer for serializing JSON
-
     // Allocate a buffer for the JSON document and serialize it
-    char buffer[BUFFER_SIZE];
-    size_t serializedSize = serializeJson(doc, buffer, BUFFER_SIZE);
+    char buffer[MQTT_BUFFER_SIZE];
+    size_t serializedSize = serializeJson(doc, buffer, MQTT_BUFFER_SIZE);
 
     // Check if the buffer is large enough for the JSON document
-    if (serializedSize >= BUFFER_SIZE)
+    if (serializedSize >= MQTT_BUFFER_SIZE)
     {
         Serial.printf("Failed to publish message to topic '%s': Buffer (%d bytes) too small for JSON (%d bytes)\n",
-                      topic, BUFFER_SIZE, serializedSize);
+                      topic, MQTT_BUFFER_SIZE, serializedSize);
         lastHAPublishTime = millis(); // Update last publish time to prevent rapid publishing
         return;
     }
@@ -107,14 +128,14 @@ void publishStatusHA()
     // Allocate the JSON document
     JsonDocument doc;
 
-    doc["mapState"] = mapState ? "ON" : "OFF";
+    doc["enabled"] = mapState ? "ON" : "OFF";
     doc["haReconnectAttempts"] = haReconnectAttempts;
     doc["awsReconnectAttempts"] = awsReconnectAttempts;
     doc["uptime"] = millis() / 1000;
     doc["awsMsgsReceived"] = awsMsgsReceived;
 
     // Publish device status to the MQTT topic
-    publishJsonHA(MAP_STATE_TOPIC, doc);
+    publishJsonHA(statusPubTopic, doc);
 }
 
 /**
@@ -146,6 +167,68 @@ bool isMapOn()
 #else
     return true;
 #endif
+}
+
+/**
+ * @brief Populates the provided JsonObject with device information.
+ *
+ * @param deviceInfo A JsonObject to be populated with device information.
+ */
+void getDeviceInfo(JsonObject deviceInfo)
+{
+    deviceInfo["identifiers"] = "Interactive-CZ-Map";
+    deviceInfo["name"] = "Interactive CZ Map";
+    deviceInfo["model"] = "LaskaKit Interaktivní Mapa ČR";
+    deviceInfo["manufacturer"] = "SenMorgan";
+}
+
+/**
+ * @brief Publishes the discovery configuration for Home Assistant.
+ *
+ * This function publishes the discovery configuration for both a sensor and a switch
+ * to Home Assistant using MQTT. The configuration includes details such as the name,
+ * state topic, unique ID, and device information.
+ *
+ * @param clientId The client ID used to uniquely identify the device in Home Assistant.
+ */
+void publishDiscoveryConfig(const char *clientId)
+{
+    const char *stateConfigTopic = "homeassistant/sensor/int_cz_map/%s/config";
+    const char *switchConfigTopic = "homeassistant/switch/int_cz_map/%s/config";
+
+    char topicBuffer[128]; // Buffer for storing the topic
+
+    // Create a device information that will be included in the sensor and switch configuration
+    JsonObject deviceInfo;
+    deviceInfo["identifiers"] = String(clientId);
+    deviceInfo["name"] = "Interactive CZ Map";
+    deviceInfo["model"] = "Interactive CZ Map. More info: https://github.com/SenMorgan/Interactive-CZ-Map";
+    deviceInfo["manufacturer"] = "SenMorgan";
+
+    // Allocate the JSON document for sensor
+    JsonDocument stateDoc;
+    stateDoc["name"] = "Interactive CZ Map Sensor";
+    stateDoc["unique_id"] = String(clientId) + "_int_cz_map_sensor";
+    stateDoc["state_topic"] = statusPubTopic;
+    stateDoc["value_template"] = "{{ value_json }}";
+    getDeviceInfo(stateDoc["device"].to<JsonObject>()); // Add device information
+
+    // Compose topic and publish sensor config
+    snprintf(topicBuffer, sizeof(topicBuffer), stateConfigTopic, clientId);
+    publishJsonHA(topicBuffer, stateDoc);
+
+    // Allocate the JSON document for switch
+    JsonDocument switchDoc;
+    switchDoc["name"] = "CZ Map Switch";
+    switchDoc["unique_id"] = String(clientId) + "_int_cz_map_switch";
+    switchDoc["command_topic"] = enableSubTopic;
+    switchDoc["state_topic"] = statusPubTopic;
+    switchDoc["value_template"] = "{{ value_json.enabled }}";
+    getDeviceInfo(switchDoc["device"].to<JsonObject>()); // Add device information
+
+    // Compose topic and publish switch config
+    snprintf(topicBuffer, sizeof(topicBuffer), switchConfigTopic, clientId);
+    publishJsonHA(topicBuffer, switchDoc);
 }
 
 /**
@@ -183,10 +266,11 @@ void connectToHA(const char *clientId)
             reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
 
             // Subscribe to topics
-            haClient.subscribe(MAP_CONTROL_TOPIC);
+            haClient.subscribe(enableSubTopic);
 
             // Publish the device status after successful connection
             publishStatusHA();
+            publishDiscoveryConfig(clientId);
         }
         else
         {
@@ -218,6 +302,11 @@ void haClientTask(void *pvParameters)
     // Setup the Home Assistant MQTT client
     haClient.setServer(HA_MQTT_BROKER_HOST, HA_MQTT_BROKER_PORT);
     haClient.setCallback(haMessageHandler);
+    haClient.setBufferSize(MQTT_BUFFER_SIZE); // Increase buffer size to handle large auto-discovery messages
+
+    // Compose topics
+    snprintf(enableSubTopic, sizeof(enableSubTopic), "%s/%s", MQTT_SUB_TOPIC_ENABLE, clientId);
+    snprintf(statusPubTopic, sizeof(statusPubTopic), "%s/%s", MQTT_PUB_TOPIC_STATUS, clientId);
 
     // Attempt to connect to the Home Assistant MQTT Broker
     Serial.println(F("Connecting to Home Assistant MQTT Broker..."));
