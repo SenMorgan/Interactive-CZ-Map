@@ -221,6 +221,7 @@ void publishDiscoveryConfig(const char *clientId)
     switchDoc["command_topic"] = enableSubTopic;
     switchDoc["state_topic"] = statusPubTopic;
     switchDoc["value_template"] = "{{ value_json.enabled }}";
+    switchDoc["icon"] = "mdi:map-legend";
     getDeviceInfo(switchDoc["device"].to<JsonObject>()); // Add device information
 
     // Compose topic and publish switch config
