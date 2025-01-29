@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include "constants.h"
 #include "aws_iot.h"
+#include "ha_client.h"
 #include "leds.h"
 #include "wifi_manager.h"
 
@@ -25,12 +26,17 @@ void setup()
 #else
     initAWS(chipID, sizeof(chipID));
 #endif
+
+    // Initialize map control via Home Assistant
+    initHAClient(chipID, sizeof(chipID));
 }
 
 void loop()
 {
-    handleWiFi();            // Maintain WiFi connection
-    maintainAWSConnection(); // Maintain the MQTT connection
-    periodicStatusPublish(); // Publish the device status periodically
-    yield();                 // Allow the ESP32 to perform background tasks
+    handleWiFi();               // Maintain WiFi connection
+    maintainAWSConnection();    // Maintain the MQTT connection
+    maintainHAConnection();     // Maintain the Home Assistant MQTT connection
+    periodicStatusPublishAWS(); // Publish the device status periodically
+    periodicStatusPublishHA();  // Publish the map status periodically
+    yield();                    // Allow the ESP32 to perform background tasks
 }

@@ -5,6 +5,7 @@
 #include "leds_parser.h"
 #include "leds.h"
 #include "firmware_update.h"
+#include "ha_client.h"
 
 // Interval for publishing device status (in milliseconds)
 #define STATUS_PUBLISH_INTERVAL 60 * 1000
@@ -22,10 +23,11 @@ WiFiClientSecure net;
 PubSubClient client(net);
 
 // Last time the device status was published
-uint32_t lastPublishTime = 0;
-
+uint32_t lastAwsPublishTime = 0;
 // Counter for the number of times the device was reconnecting to AWS IoT
-uint32_t reconnectAttempts = 0;
+uint32_t awsReconnectAttempts = 0;
+// Counter for the number of received messages from AWS IoT
+uint32_t awsMsgsReceived = 0;
 
 // Pointer to the client ID
 const char *clientId = NULL;
@@ -40,7 +42,7 @@ char updateStatusPubTopic[sizeof(MQTT_PUB_TOPIC_UPDATE_STATUS) + MAX_CLIENT_ID_L
 
 // Function declarations
 void connectToAWS();
-void publishStatus();
+void publishStatusAWS();
 void messageHandler(char *topic, byte *payload, unsigned int length);
 void handleUpdateCommand(JsonDocument &doc);
 
@@ -61,6 +63,8 @@ void handleUpdateCommand(JsonDocument &doc);
  */
 void initAWS(const char *id, size_t idLength)
 {
+    Serial.println(F("Initializing AWS IoT client..."));
+
     // Check if the client ID is valid
     if (!id || idLength == 0)
     {
@@ -118,8 +122,9 @@ void connectToAWS()
     static uint32_t reconnectDelay = 0;
     static uint32_t lastReconnectAttempt = 0;
 
-    // Indicate connection attempt
-    circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+    // Indicate connection attempt if the map is turned on
+    if (isMapOn())
+        circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
     // Check if the client ID is set
     if (!clientId)
@@ -133,7 +138,7 @@ void connectToAWS()
     // Attempt to connect only if the delay has passed
     if (!client.connected() && (timeNow - lastReconnectAttempt >= reconnectDelay))
     {
-        reconnectAttempts++;            // Increment the number of reconnection attempts
+        awsReconnectAttempts++;         // Increment the number of reconnection attempts
         lastReconnectAttempt = timeNow; // Update the last reconnect attempt time
 
         if (client.connect(clientId))
@@ -151,10 +156,11 @@ void connectToAWS()
             client.subscribe(updateSubTopic);
 
             // Publish the device status after successful connection
-            publishStatus();
+            publishStatusAWS();
 
-            // Indicate connection success
-            circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+            // Indicate connection success if the map is turned on
+            if (isMapOn())
+                circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
         }
         else
         {
@@ -215,7 +221,7 @@ void publishJson(const char *topic, const JsonDocument &doc)
     {
         Serial.printf("Failed to publish message to topic '%s': Buffer (%d bytes) too small for JSON (%d bytes)\n",
                       topic, BUFFER_SIZE, serializedSize);
-        lastPublishTime = millis(); // Update last publish time to prevent rapid publishing
+        lastAwsPublishTime = millis(); // Update last publish time to prevent rapid publishing
         return;
     }
 
@@ -223,7 +229,7 @@ void publishJson(const char *topic, const JsonDocument &doc)
     if (!client.connected())
     {
         Serial.printf("Error publishing to topic '%s': AWS IoT client not connected\n", topic);
-        lastPublishTime = millis(); // Update last publish time to prevent rapid publishing
+        lastAwsPublishTime = millis(); // Update last publish time to prevent rapid publishing
         return;
     }
 
@@ -234,7 +240,7 @@ void publishJson(const char *topic, const JsonDocument &doc)
         Serial.printf("Failed to publish message to topic '%s'\n", topic);
 
     // Set last publish time to the current time after attempting to publish
-    lastPublishTime = millis();
+    lastAwsPublishTime = millis();
 }
 
 /**
@@ -244,7 +250,7 @@ void publishJson(const char *topic, const JsonDocument &doc)
  * such as firmware version, Wi-Fi status, IP address, and any other pertinent details.
  * It then publishes this JSON document to the predefined MQTT status topic.
  */
-void publishStatus()
+void publishStatusAWS()
 {
     // Allocate the JSON document
     JsonDocument doc;
@@ -252,7 +258,7 @@ void publishStatus()
     // Populate the JSON document with status information
     doc["fw_version"] = FIRMWARE_VERSION;
     doc["uptime"] = millis() / 1000;
-    doc["reconnects"] = reconnectAttempts;
+    doc["reconnects"] = awsReconnectAttempts;
     doc["reset_reason"] = esp_reset_reason();
     doc["wifi_ssid"] = WiFi.SSID();
     doc["ip_address"] = WiFi.localIP().toString();
@@ -263,18 +269,18 @@ void publishStatus()
 }
 
 /**
- * @brief Publishes the status periodically.
+ * @brief Publishes the status periodically to the AWS IoT topic.
  *
  * This function checks the elapsed time since the last status publish and
  * publishes the status if the elapsed time is greater than or equal to the
  * STATUS_PUBLISH_INTERVAL.
  *
- * @note Variable lastPublishTime is updated in the publishStatus() function.
+ * @note Variable lastAwsPublishTime is updated in the publishStatusAWS() function.
  */
-void periodicStatusPublish()
+void periodicStatusPublishAWS()
 {
-    if (millis() - lastPublishTime >= STATUS_PUBLISH_INTERVAL)
-        publishStatus();
+    if (millis() - lastAwsPublishTime >= STATUS_PUBLISH_INTERVAL)
+        publishStatusAWS();
 }
 
 /**
@@ -357,11 +363,20 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
 
     // Dispatch to appropriate handler based on topic
     if (strcmp(topic, ledsSubTopic) == 0 || strcmp(topic, MQTT_SUB_TOPIC_LEDS) == 0)
-        setLedsFromJsonDoc(doc);
+    {
+        if (isMapOn()) // Parse and set LEDs only if the map is turned on
+            setLedsFromJsonDoc(doc);
+    }
     else if (strcmp(topic, updateSubTopic) == 0 || strcmp(topic, MQTT_SUB_TOPIC_UPDATE) == 0)
+    {
         handleUpdateCommand(doc);
+    }
     else
+    {
         Serial.printf("Unknown topic received: %s\n", topic);
+    }
+
+    awsMsgsReceived++; // Increment the number of received messages
 }
 
 /**

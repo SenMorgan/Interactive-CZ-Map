@@ -5,6 +5,6 @@
 
 void initAWS(const char *id, size_t idLength);
 void maintainAWSConnection();
-void periodicStatusPublish();
+void periodicStatusPublishAWS();
 
 #endif // AWS_IOT_H
