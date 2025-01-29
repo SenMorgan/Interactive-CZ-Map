@@ -1,12 +1,27 @@
 #include "ha_client.h"
 #include "constants.h"
 #include <ArduinoJson.h>
+#include <WiFi.h>
 
+// Initialize Wi-Fi and MQTT client
 WiFiClient haClientNet;
 PubSubClient haClient(haClientNet);
 
+// Interval for publishing device status (in milliseconds)
 #define HA_STATUS_PUBLISH_INTERVAL 10 * 1000
+// Initial delay before attempting to reconnect to Home Assistant MQTT Broker (in milliseconds)
+#define RECONNECT_INITIAL_DELAY    100
+// Maximum delay between reconnection attempts to Home Assistant MQTT Broker (in milliseconds)
+#define RECONNECT_MAX_DELAY        10000
+// MQTT buffer size for handling larger messages
+#define MQTT_BUFFER_SIZE           8192
 
+// Task parameters
+#define HA_TASK_STACK_SIZE (4 * 1024U)
+#define HA_TASK_PRIORITY   (tskIDLE_PRIORITY + 1)
+#define HA_TASK_CORE       1 // Core 0 is used by the WiFi
+
+// MQTT topics
 const char *MAP_CONTROL_TOPIC = MQTT_BASE_TOPIC "/control";
 const char *MAP_STATE_TOPIC = MQTT_BASE_TOPIC "/status/device";
 
@@ -39,55 +54,6 @@ void haMessageHandler(char *topic, byte *payload, unsigned int length)
             Serial.println("Map turned OFF");
         }
     }
-}
-
-void initHAClient(const char *chipID, size_t chipIDLength)
-{
-#ifdef HA_MQTT_BROKER_HOST
-    Serial.println(F("Initializing Home Assistant MQTT client..."));
-
-    // Compose hostname from chipID and set it
-    const char *id = (String(HOSTNAME_PREFIX) + "_" + String(chipID)).c_str();
-
-    haClient.setServer(HA_MQTT_BROKER_HOST, HA_MQTT_BROKER_PORT);
-    haClient.setCallback(haMessageHandler);
-
-    // Attempt to connect
-    if (haClient.connect(id, HA_MQTT_USER, HA_MQTT_PASS))
-    {
-        haClient.subscribe(MAP_CONTROL_TOPIC);
-        Serial.println(F("Connected to Home Assistant MQTT Broker"));
-    }
-    else
-    {
-        Serial.printf("Failed to connect to Home Assistant MQTT Broker. State: %s\n", haClient.state());
-    }
-#endif
-}
-
-void maintainHAConnection()
-{
-    if (!haClient.connected())
-    {
-        haReconnectAttempts++;
-        while (!haClient.connected())
-        {
-            Serial.println("Connecting to Home Assistant MQTT Broker...");
-            if (haClient.connect("ESP32_Map_Client"))
-            {
-                haClient.subscribe(MAP_CONTROL_TOPIC);
-                Serial.println("Connected to Home Assistant MQTT Broker");
-            }
-            else
-            {
-                Serial.print("Failed, rc=");
-                Serial.print(haClient.state());
-                Serial.println(" try again in 5 seconds");
-                delay(5000);
-            }
-        }
-    }
-    haClient.loop();
 }
 
 /**
@@ -133,6 +99,9 @@ void publishJsonHA(const char *topic, const JsonDocument &doc)
     lastHAPublishTime = millis();
 }
 
+/**
+ * @brief Publishes the current status to Home Assistant via MQTT.
+ */
 void publishStatusHA()
 {
     // Allocate the JSON document
@@ -165,6 +134,11 @@ void periodicStatusPublishHA()
 #endif
 }
 
+/**
+ * @brief Checks if the map is enabled.
+ *
+ * @return true if the map is enabled (flashings allowed), false otherwise.
+ */
 bool isMapOn()
 {
 #ifdef HA_MQTT_BROKER_HOST
@@ -172,4 +146,135 @@ bool isMapOn()
 #else
     return true;
 #endif
+}
+
+/**
+ * @brief Connects to the Home Assistant MQTT Broker using the provided client ID.
+ *
+ * This function attempts to establish a connection to the Home Assistant MQTT Broker.
+ * If the connection fails, it will retry with an exponential backoff delay.
+ *
+ * @param clientId The client ID to use for the MQTT connection. Must be set before calling this function.
+ */
+void connectToHA(const char *clientId)
+{
+    static uint32_t reconnectDelay = 0;
+    static uint32_t lastReconnectAttempt = 0;
+
+    // Check if the client ID is set
+    if (!clientId)
+    {
+        Serial.println(F("Error: Client ID must be set before connecting to Home Assistant MQTT Broker"));
+        return;
+    }
+
+    uint32_t timeNow = millis();
+
+    // Attempt to connect only if the delay has passed
+    if (!haClient.connected() && (timeNow - lastReconnectAttempt >= reconnectDelay))
+    {
+        haReconnectAttempts++;          // Increment the number of reconnection attempts
+        lastReconnectAttempt = timeNow; // Update the last reconnect attempt time
+
+        if (haClient.connect(clientId, HA_MQTT_USER, HA_MQTT_PASS))
+        {
+            // Connection successful
+            Serial.println(F("Connected to Home Assistant MQTT Broker"));
+            reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
+
+            // Subscribe to topics
+            haClient.subscribe(MAP_CONTROL_TOPIC);
+
+            // Publish the device status after successful connection
+            publishStatusHA();
+        }
+        else
+        {
+            // Connection failed - apply exponential backoff
+            Serial.printf("Connection to Home Assistant MQTT Broker failed, rc=%d\n", haClient.state());
+            Serial.printf("Retrying in %lu ms\n", reconnectDelay);
+
+            if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
+                reconnectDelay *= 2;
+            else
+                reconnectDelay = RECONNECT_MAX_DELAY;
+        }
+    }
+}
+
+/**
+ * @brief Task to handle the Home Assistant MQTT client connection and communication.
+ *
+ * This task sets up the Home Assistant MQTT client, attempts to connect to the MQTT broker,
+ * and handles the communication loop. If the connection is lost, it attempts to reconnect.
+ *
+ * @param pvParameters Pointer to the client ID (const char *) used for the MQTT connection.
+ *
+ */
+void haClientTask(void *pvParameters)
+{
+    const char *clientId = (const char *)pvParameters;
+
+    // Setup the Home Assistant MQTT client
+    haClient.setServer(HA_MQTT_BROKER_HOST, HA_MQTT_BROKER_PORT);
+    haClient.setCallback(haMessageHandler);
+
+    // Attempt to connect to the Home Assistant MQTT Broker
+    Serial.println(F("Connecting to Home Assistant MQTT Broker..."));
+    Serial.printf("Client ID: %s\n", clientId);
+    connectToHA(clientId);
+
+    for (;;)
+    {
+        // If the client is connected, simply return
+        if (haClient.loop())
+        {
+            periodicStatusPublishHA();
+        }
+        else
+        {
+            // Do not attempt to reconnect if WiFi is not connected or ESP does not have assigned IP
+            if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == INADDR_NONE)
+                return;
+
+            // If the client is not connected, attempt to reconnect
+            Serial.println(F("Home Assistant MQTT client disconnected. Attempting to reconnect..."));
+            connectToHA(clientId);
+        }
+
+        // Delay for a short period before the next iteration
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+/**
+ * @brief Initializes the Home Assistant client task.
+ *
+ * @param clientId The client ID to be used for the Home Assistant client.
+ * @param idLength The length of the client ID.
+ */
+void haClientTaskInit(char *clientId, size_t idLength)
+{
+    // Check if the client ID is valid
+    if (!clientId || idLength == 0)
+    {
+        Serial.println(F("Error: Invalid client ID, cannot create Home Assistant client task"));
+        return;
+    }
+
+    // Copy the client ID to a new buffer, otherwise it will be lost when the task is created
+    char *clientIdCopy = new char[idLength];
+    strncpy(clientIdCopy, clientId, idLength);
+
+    if (xTaskCreatePinnedToCore(haClientTask,
+                                "haClientTask",
+                                HA_TASK_STACK_SIZE,
+                                (void *)clientIdCopy,
+                                HA_TASK_PRIORITY,
+                                NULL,
+                                HA_TASK_CORE) != pdPASS)
+    {
+        Serial.println("Failed to create haClientTask");
+        delete[] clientIdCopy;
+    }
 }

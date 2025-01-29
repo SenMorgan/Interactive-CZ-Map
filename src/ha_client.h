@@ -4,9 +4,7 @@
 #include <PubSubClient.h>
 #include <WiFiClient.h>
 
-void initHAClient(const char *chipID, size_t chipIDLength);
-void maintainHAConnection();
-void periodicStatusPublishHA();
+void haClientTaskInit(char *clientId, size_t idLength);
 bool isMapOn();
 
 // Variables used in status publishing

@@ -27,16 +27,16 @@ void setup()
     initAWS(chipID, sizeof(chipID));
 #endif
 
-    // Initialize map control via Home Assistant
-    initHAClient(chipID, sizeof(chipID));
+    // Initialize map control via Home Assistant if defined
+#ifdef HA_MQTT_BROKER_HOST
+    haClientTaskInit(chipID, sizeof(chipID));
+#endif
 }
 
 void loop()
 {
     handleWiFi();               // Maintain WiFi connection
     maintainAWSConnection();    // Maintain the MQTT connection
-    maintainHAConnection();     // Maintain the Home Assistant MQTT connection
     periodicStatusPublishAWS(); // Publish the device status periodically
-    periodicStatusPublishHA();  // Publish the map status periodically
     yield();                    // Allow the ESP32 to perform background tasks
 }
