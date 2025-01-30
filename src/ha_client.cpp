@@ -174,12 +174,25 @@ bool isMapOn()
  *
  * @param deviceInfo A JsonObject to be populated with device information.
  */
-void getDeviceInfo(JsonObject deviceInfo)
+void getDeviceInfo(JsonObject deviceInfo, const char *clientId)
 {
-    deviceInfo["identifiers"] = "Interactive-CZ-Map";
     deviceInfo["name"] = "Interactive CZ Map";
-    deviceInfo["model"] = "Interactive CZ Map. More info: https://github.com/SenMorgan/Interactive-CZ-Map";
-    deviceInfo["manufacturer"] = "SenMorgan";
+    deviceInfo["mdl"] = HOSTNAME_PREFIX;
+    deviceInfo["mf"] = "👨‍💻 SenMorgan";
+    deviceInfo["sn"] = String(clientId);
+    deviceInfo["ids"].to<JsonArray>().add("int-cz-map-" + String(clientId));
+}
+
+/**
+ * @brief Populates the provided JsonObject with origin information.
+ *
+ * @param originInfo A JsonObject to be populated with origin information.
+ */
+void getOriginInfo(JsonObject originInfo)
+{
+    originInfo["name"] = "Interactive CZ Map";
+    originInfo["sw"] = FIRMWARE_VERSION;
+    originInfo["url"] = "https://github.com/SenMorgan/Interactive-CZ-Map";
 }
 
 /**
@@ -196,37 +209,43 @@ void publishDiscoveryConfig(const char *clientId)
     #define TOPIC_BUFFER_SIZE 128
 
     // Topic formats for sensor and switch configuration
-    const char *stateConfigTopic = "homeassistant/sensor/int_cz_map/%s/config";
     const char *switchConfigTopic = "homeassistant/switch/int_cz_map/%s/config";
+    const char *stateConfigTopic = "homeassistant/sensor/int_cz_map/%s/config";
 
-    // Buffer for storing the topic
+    // Allocate a buffer for the topi and JSON document
     char topicBuffer[TOPIC_BUFFER_SIZE];
+    JsonDocument doc;
 
-    // Allocate the JSON document for sensor
-    JsonDocument stateDoc;
-    stateDoc["name"] = "Sensor";
-    stateDoc["unique_id"] = String(clientId) + "_sensor";
-    stateDoc["state_topic"] = statusPubTopic;
-    stateDoc["value_template"] = "{{ value_json }}";
-    getDeviceInfo(stateDoc["device"].to<JsonObject>()); // Add device information
+    // Switch configuration
+    doc["name"] = "Enable";
+    doc["uniq_id"] = String(clientId) + "_enable";
+    doc["cmd_t"] = enableSubTopic;
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json.enabled }}";
+    doc["ic"] = "mdi:map-legend";
+    getDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+    getOriginInfo(doc["o"].to<JsonObject>()); // Add origin information. Origin adds only once per device.
 
-    // Compose topic and publish sensor config
-    snprintf(topicBuffer, sizeof(topicBuffer), stateConfigTopic, clientId);
-    publishJsonHA(topicBuffer, stateDoc);
-
-    // Allocate the JSON document for switch
-    JsonDocument switchDoc;
-    switchDoc["name"] = "Enable";
-    switchDoc["unique_id"] = String(clientId) + "_enable";
-    switchDoc["command_topic"] = enableSubTopic;
-    switchDoc["state_topic"] = statusPubTopic;
-    switchDoc["value_template"] = "{{ value_json.enabled }}";
-    switchDoc["icon"] = "mdi:map-legend";
-    getDeviceInfo(switchDoc["device"].to<JsonObject>()); // Add device information
+    // Used for debugging
+    // serializeJsonPretty(doc, Serial);
 
     // Compose topic and publish switch config
     snprintf(topicBuffer, sizeof(topicBuffer), switchConfigTopic, clientId);
-    publishJsonHA(topicBuffer, switchDoc);
+    publishJsonHA(topicBuffer, doc);
+
+    // Clear the JSON document
+    doc.clear();
+
+    // Sensor configuration
+    doc["name"] = "Sensor";
+    doc["uniq_id"] = String(clientId) + "_sensor";
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json }}";
+    getDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+
+    // Compose topic and publish sensor config
+    snprintf(topicBuffer, sizeof(topicBuffer), stateConfigTopic, clientId);
+    publishJsonHA(topicBuffer, doc);
 }
 
 /**
