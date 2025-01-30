@@ -1,5 +1,5 @@
 #include <WiFi.h>
-#include "esp32_utils.h"    // Required for CHIP_ID_LENGTH
+#include "esp32_utils.h" // Required for CHIP_ID_LENGTH
 #include <ArduinoJson.h>
 
 #include "ha_client.h"
@@ -26,6 +26,13 @@ PubSubClient haClient(haClientNet);
 // MQTT topics
 #define MQTT_SUB_TOPIC_ENABLE MQTT_BASE_TOPIC "/cmd/enable"
 #define MQTT_PUB_TOPIC_STATUS MQTT_BASE_TOPIC "/status/device"
+
+// Home Assistant discovery topics
+#define MQTT_DISCOVERY_SWITCH_TOPIC "homeassistant/switch/int_cz_map/%s/config"
+#define MQTT_DISCOVERY_SENSOR_TOPIC "homeassistant/sensor/int_cz_map/%s/config"
+
+// Buffer size for MQTT topics
+#define TOPIC_BUFFER_SIZE 128
 
 // Last time the device status was published
 uint32_t lastHAPublishTime = 0;
@@ -174,7 +181,7 @@ bool isMapOn()
  *
  * @param deviceInfo A JsonObject to be populated with device information.
  */
-void getDeviceInfo(JsonObject deviceInfo, const char *clientId)
+void setDeviceInfo(JsonObject deviceInfo, const char *clientId)
 {
     deviceInfo["name"] = "Interactive CZ Map";
     deviceInfo["mdl"] = HOSTNAME_PREFIX;
@@ -188,11 +195,81 @@ void getDeviceInfo(JsonObject deviceInfo, const char *clientId)
  *
  * @param originInfo A JsonObject to be populated with origin information.
  */
-void getOriginInfo(JsonObject originInfo)
+void setOriginInfo(JsonObject originInfo)
 {
     originInfo["name"] = "Interactive CZ Map";
     originInfo["sw"] = FIRMWARE_VERSION;
     originInfo["url"] = "https://github.com/SenMorgan/Interactive-CZ-Map";
+}
+
+void buildSwitchConfig(JsonDocument &doc, const char *clientId, char *topicBuffer)
+{
+    // Create Unique ID
+    String uniqId = String(clientId) + "_enable";
+
+    // Build topic for the switch configuration using the Unique ID
+    snprintf(topicBuffer, TOPIC_BUFFER_SIZE, MQTT_DISCOVERY_SWITCH_TOPIC, uniqId.c_str());
+
+    // Build the switch configuration
+    doc["name"] = "Enable";
+    doc["uniq_id"] = uniqId;
+    doc["cmd_t"] = enableSubTopic;
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json.enabled }}";
+    doc["ic"] = "mdi:map-legend";
+    setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+}
+
+void buildAwsReconAttSensorConfig(JsonDocument &doc, const char *clientId, char *topicBuffer)
+{
+    // Create Unique ID
+    String uniqId = String(clientId) + "_aws_recon_att";
+
+    // Build topic for the sensor configuration using the Unique ID
+    snprintf(topicBuffer, TOPIC_BUFFER_SIZE, MQTT_DISCOVERY_SENSOR_TOPIC, uniqId.c_str());
+
+    // Build the sensor configuration
+    doc["name"] = "AWS Reconnect Attempts";
+    doc["uniq_id"] = uniqId;
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json.awsReconnectAttempts }}";
+    doc["ic"] = "mdi:counter";
+    setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+}
+
+void buildAwsMsgsRcvdSensorConfig(JsonDocument &doc, const char *clientId, char *topicBuffer)
+{
+    // Create Unique ID
+    String uniqId = String(clientId) + "_aws_msgs_rcvd";
+
+    // Build topic for the sensor configuration using the Unique ID
+    snprintf(topicBuffer, TOPIC_BUFFER_SIZE, MQTT_DISCOVERY_SENSOR_TOPIC, uniqId.c_str());
+
+    // Build the sensor configuration
+    doc["name"] = "AWS Messages Received";
+    doc["uniq_id"] = uniqId;
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json.awsMsgsReceived }}";
+    doc["ic"] = "mdi:counter";
+    setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+}
+
+void buildUptimeSensorConfig(JsonDocument &doc, const char *clientId, char *topicBuffer)
+{
+    // Create Unique ID
+    String uniqId = String(clientId) + "_uptime";
+
+    // Build topic for the sensor configuration using the Unique ID
+    snprintf(topicBuffer, TOPIC_BUFFER_SIZE, MQTT_DISCOVERY_SENSOR_TOPIC, uniqId.c_str());
+
+    // Build the sensor configuration
+    doc["name"] = "Uptime";
+    doc["uniq_id"] = uniqId;
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json.uptime }}";
+    doc["dev_cla"] = "duration";
+    doc["ic"] = "mdi:clock";
+    setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
 }
 
 /**
@@ -206,45 +283,28 @@ void getOriginInfo(JsonObject originInfo)
  */
 void publishDiscoveryConfig(const char *clientId)
 {
-    #define TOPIC_BUFFER_SIZE 128
-
-    // Topic formats for sensor and switch configuration
-    const char *switchConfigTopic = "homeassistant/switch/int_cz_map/%s/config";
-    const char *stateConfigTopic = "homeassistant/sensor/int_cz_map/%s/config";
-
     // Allocate a buffer for the topi and JSON document
     char topicBuffer[TOPIC_BUFFER_SIZE];
     JsonDocument doc;
 
-    // Switch configuration
-    doc["name"] = "Enable";
-    doc["uniq_id"] = String(clientId) + "_enable";
-    doc["cmd_t"] = enableSubTopic;
-    doc["stat_t"] = statusPubTopic;
-    doc["val_tpl"] = "{{ value_json.enabled }}";
-    doc["ic"] = "mdi:map-legend";
-    getDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
-    getOriginInfo(doc["o"].to<JsonObject>()); // Add origin information. Origin adds only once per device.
-
-    // Used for debugging
-    // serializeJsonPretty(doc, Serial);
-
-    // Compose topic and publish switch config
-    snprintf(topicBuffer, sizeof(topicBuffer), switchConfigTopic, clientId);
+    // Create and publish Switch configuration
+    buildSwitchConfig(doc, clientId, topicBuffer);
+    setOriginInfo(doc["o"].to<JsonObject>()); // Add origin info once per device
     publishJsonHA(topicBuffer, doc);
 
-    // Clear the JSON document
-    doc.clear();
+    // Create and publish AWS Reconnect Attempts sensor configuration
+    doc.clear(); // Clear previous data
+    buildAwsReconAttSensorConfig(doc, clientId, topicBuffer);
+    publishJsonHA(topicBuffer, doc);
 
-    // Sensor configuration
-    doc["name"] = "Sensor";
-    doc["uniq_id"] = String(clientId) + "_sensor";
-    doc["stat_t"] = statusPubTopic;
-    doc["val_tpl"] = "{{ value_json }}";
-    getDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+    // Create and publish AWS Messages Received sensor configuration
+    doc.clear(); // Clear previous data
+    buildAwsMsgsRcvdSensorConfig(doc, clientId, topicBuffer);
+    publishJsonHA(topicBuffer, doc);
 
-    // Compose topic and publish sensor config
-    snprintf(topicBuffer, sizeof(topicBuffer), stateConfigTopic, clientId);
+    // Create and publish Uptime sensor configuration
+    doc.clear(); // Clear previous data
+    buildUptimeSensorConfig(doc, clientId, topicBuffer);
     publishJsonHA(topicBuffer, doc);
 }
 
@@ -286,8 +346,8 @@ void connectToHA(const char *clientId)
             haClient.subscribe(enableSubTopic);
 
             // Publish the device status after successful connection
-            publishStatusHA();
             publishDiscoveryConfig(clientId);
+            publishStatusHA();
         }
         else
         {
