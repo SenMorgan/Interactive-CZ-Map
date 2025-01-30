@@ -1,11 +1,14 @@
 #include <WiFi.h>
+#include "esp32_utils.h"    // Required for CHIP_ID_LENGTH
+
 #include "constants.h"
 #include "aws_iot.h"
-#include "ha_client.h"
 #include "leds.h"
 #include "wifi_manager.h"
 
-#include "esp32_utils.h"
+#ifdef USE_HOME_ASSISTANT
+#include "ha_client.h"
+#endif
 
 void setup()
 {
@@ -28,7 +31,7 @@ void setup()
 #endif
 
     // Initialize map control via Home Assistant if defined
-#ifdef HA_MQTT_BROKER_HOST
+#ifdef USE_HOME_ASSISTANT
     haClientTaskInit(chipID, sizeof(chipID));
 #endif
 }

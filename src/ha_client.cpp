@@ -1,5 +1,5 @@
 #include <WiFi.h>
-#include "esp32_utils.h"
+#include "esp32_utils.h"    // Required for CHIP_ID_LENGTH
 #include <ArduinoJson.h>
 
 #include "ha_client.h"
