@@ -268,6 +268,7 @@ void buildUptimeSensorConfig(JsonDocument &doc, const char *clientId, char *topi
     doc["stat_t"] = statusPubTopic;
     doc["val_tpl"] = "{{ value_json.uptime }}";
     doc["dev_cla"] = "duration";
+    doc["unit_of_meas"] = "s";
     doc["ic"] = "mdi:clock";
     setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
 }
@@ -283,13 +284,13 @@ void buildUptimeSensorConfig(JsonDocument &doc, const char *clientId, char *topi
  */
 void publishDiscoveryConfig(const char *clientId)
 {
-    // Allocate a buffer for the topi and JSON document
+    // Allocate a buffer for the topic
     char topicBuffer[TOPIC_BUFFER_SIZE];
-    JsonDocument doc;
 
     // Create and publish Switch configuration
+    JsonDocument doc; // Create a JSON document
     buildSwitchConfig(doc, clientId, topicBuffer);
-    setOriginInfo(doc["o"].to<JsonObject>()); // Add origin info once per device
+    setOriginInfo(doc["o"].to<JsonObject>()); // Add origin info only for the first configuration
     publishJsonHA(topicBuffer, doc);
 
     // Create and publish AWS Reconnect Attempts sensor configuration
