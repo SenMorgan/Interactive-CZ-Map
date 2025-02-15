@@ -234,7 +234,8 @@ void buildAwsReconAttSensorConfig(JsonDocument &doc, const char *clientId, char 
     doc["name"] = "AWS Reconnect Attempts";
     doc["uniq_id"] = uniqId;
     doc["stat_t"] = statusPubTopic;
-    doc["val_tpl"] = "{{ value_json.awsReconnectAttempts }}";
+    doc["val_tpl"] = "{{ value_json.awsReconnectAttempts | int(0) }}";
+    doc["unit_of_meas"] = "times";
     doc["ic"] = "mdi:counter";
     setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
 }
@@ -251,7 +252,8 @@ void buildAwsMsgsRcvdSensorConfig(JsonDocument &doc, const char *clientId, char 
     doc["name"] = "AWS Messages Received";
     doc["uniq_id"] = uniqId;
     doc["stat_t"] = statusPubTopic;
-    doc["val_tpl"] = "{{ value_json.awsMsgsReceived }}";
+    doc["val_tpl"] = "{{ value_json.awsMsgsReceived | int(0) }}";
+    doc["unit_of_meas"] = "messages";
     doc["ic"] = "mdi:counter";
     setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
 }
