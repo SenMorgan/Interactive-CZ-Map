@@ -93,8 +93,9 @@ void haMessageHandler(char *topic, byte *payload, unsigned int length)
  *
  * @param topic The MQTT topic to publish the JSON document to.
  * @param doc The JSON document to be published.
+ * @param retain Flag indicating if the message should be retained by the broker.
  */
-void publishJsonHA(const char *topic, const JsonDocument &doc)
+void publishJsonHA(const char *topic, const JsonDocument &doc, bool retain = true)
 {
     // Allocate a buffer for the JSON document and serialize it
     char buffer[MQTT_BUFFER_SIZE];
@@ -118,7 +119,7 @@ void publishJsonHA(const char *topic, const JsonDocument &doc)
     }
 
     // Publish the message to the specified topic
-    if (haClient.publish(topic, buffer))
+    if (haClient.publish(topic, buffer, retain))
         Serial.printf("Published %d bytes to topic '%s'\n", serializedSize, topic);
     else
         Serial.printf("Failed to publish message to topic '%s'\n", topic);
@@ -217,6 +218,7 @@ void buildSwitchConfig(JsonDocument &doc, const char *clientId, char *topicBuffe
     doc["stat_t"] = statusPubTopic;
     doc["val_tpl"] = "{{ value_json.enabled }}";
     doc["ic"] = "mdi:map-legend";
+    doc["ret"] = true;
     setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
 }
 
