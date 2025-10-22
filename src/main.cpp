@@ -1,14 +1,10 @@
 #include <WiFi.h>
 #include "esp32_utils.h"    // Required for CHIP_ID_LENGTH
-
 #include "constants.h"
 #include "aws_iot.h"
 #include "leds.h"
 #include "wifi_manager.h"
-
-#ifdef USE_HOME_ASSISTANT
 #include "ha_client.h"
-#endif
 
 void setup()
 {

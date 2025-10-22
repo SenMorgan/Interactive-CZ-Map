@@ -121,10 +121,14 @@ void connectToAWS()
 {
     static uint32_t reconnectDelay = 0;
     static uint32_t lastReconnectAttempt = 0;
+    static bool firstError = true;
 
     // Indicate connection attempt if the map is turned on
-    if (isMapOn())
+    if (isMapOn() && firstError)
+    {
         circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+        firstError = false;
+    }
 
     // Check if the client ID is set
     if (!clientId)
@@ -146,6 +150,7 @@ void connectToAWS()
             // Connection successful
             Serial.println(F("Connected to AWS IoT"));
             reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
+            firstError = true;  // Reset flag
 
             // Subscribe to the generic MQTT topics
             client.subscribe(MQTT_SUB_TOPIC_LEDS);
@@ -187,8 +192,32 @@ void connectToAWS()
 void maintainAWSConnection()
 {
     // If the client is connected, simply return
-    if (client.loop())
+    client.loop();
+
+    if (client.connected())
+    {
         return;
+    }
+    else
+    {
+        Serial.printf("AWS IoT client disconnected. MQTT error code: %d\n", client.state());
+        // Optionally, print a user-friendly message based on the error code:
+        switch (client.state())
+        {
+            case MQTT_CONNECTION_TIMEOUT:
+                Serial.println("Connection timeout. Please check your network.");
+                break;
+            case MQTT_CONNECTION_LOST:
+                Serial.println("Connection lost. Trying to reconnect...");
+                break;
+            case MQTT_CONNECT_FAILED:
+                Serial.println("Connection failed. Check credentials and endpoint.");
+                break;
+            // Add more cases as needed
+            default:
+                Serial.println("Unknown MQTT error.");
+        }
+    }
 
     // Do not attempt to reconnect if WiFi is not connected or ESP does not have assigned IP
     if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == INADDR_NONE)
