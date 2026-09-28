@@ -71,10 +71,10 @@ void connectMultiWiFi()
 
     LOGERROR(F("ConnectMultiWiFi with :"));
 
-    if ((Router_SSID != "") && (Router_Pass != ""))
+    if ((Router_SSID != ""))
     {
-        LOGERROR3(F("* Flash-stored Router_SSID = "), Router_SSID, F(", Router_Pass = "), Router_Pass);
-        LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
+        LOGERROR1(F("* Flash-stored Router_SSID = "), Router_SSID);
+        LOGERROR1(F("* Add SSID = "), Router_SSID);
         wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
     }
 
@@ -83,7 +83,7 @@ void connectMultiWiFi()
         // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
         if ((String(WM_config.WiFi_Creds[i].wifi_ssid) != "") && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE))
         {
-            LOGERROR3(F("* Additional SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw);
+            LOGERROR1(F("* Additional SSID = "), WM_config.WiFi_Creds[i].wifi_ssid);
         }
     }
 
