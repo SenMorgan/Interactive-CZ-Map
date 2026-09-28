@@ -121,13 +121,13 @@ void connectToAWS()
 {
     static uint32_t reconnectDelay = 0;
     static uint32_t lastReconnectAttempt = 0;
-    static bool firstError = true;
+    static bool connAttemptDisplayed = false;
 
     // Indicate connection attempt if the map is turned on
-    if (isMapOn() && firstError)
+    if (isMapOn() && !connAttemptDisplayed)
     {
         circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
-        firstError = false;
+        connAttemptDisplayed = true;
     }
 
     // Check if the client ID is set
@@ -150,7 +150,7 @@ void connectToAWS()
             // Connection successful
             Serial.println(F("Connected to AWS IoT"));
             reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
-            firstError = true;  // Reset flag
+            connAttemptDisplayed = false;  // Reset flag
 
             // Subscribe to the generic MQTT topics
             client.subscribe(MQTT_SUB_TOPIC_LEDS);
