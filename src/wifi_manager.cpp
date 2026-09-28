@@ -256,7 +256,7 @@ void initWiFiManager(const char *chipID)
     // Don't permit NULL password
     if ((Router_SSID != "") && (Router_Pass != ""))
     {
-        LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
+        LOGERROR1(F("* Add SSID = "), Router_SSID);
         wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
 
         ESPAsync_wifiManager.setConfigPortalTimeout(120); // If no access point name has been previously entered disable timeout.
@@ -326,7 +326,7 @@ void initWiFiManager(const char *chipID)
             // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
             if ((String(WM_config.WiFi_Creds[i].wifi_ssid) != "") && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE))
             {
-                LOGERROR3(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw);
+                LOGERROR1(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid);
                 wifiMulti.addAP(WM_config.WiFi_Creds[i].wifi_ssid, WM_config.WiFi_Creds[i].wifi_pw);
             }
         }
@@ -349,7 +349,7 @@ void initWiFiManager(const char *chipID)
             // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
             if ((String(WM_config.WiFi_Creds[i].wifi_ssid) != "") && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE))
             {
-                LOGERROR3(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw);
+                LOGERROR1(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid);
                 wifiMulti.addAP(WM_config.WiFi_Creds[i].wifi_ssid, WM_config.WiFi_Creds[i].wifi_pw);
             }
         }
