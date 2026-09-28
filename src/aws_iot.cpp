@@ -124,9 +124,9 @@ void connectToAWS()
     static bool connAttemptShown = false;
 
     // Indicate connection attempt if the map is turned on
-    if (isMapEnabled() && !connAttemptShown)
+    if (!connAttemptShown)
     {
-        circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+        ledsNotify(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
         connAttemptShown = true;
     }
 
@@ -164,10 +164,7 @@ void connectToAWS()
             publishStatusAWS();
 
             // Indicate connection success if the map is turned on
-            if (isMapEnabled())
-            {
-                circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
-            }
+            ledsNotify(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
         }
         else
         {

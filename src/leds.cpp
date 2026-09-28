@@ -2,8 +2,9 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include <FastLED.h>
-#include "constants.h"
 #include "leds.h"
+#include "constants.h"
+#include "ha_client.h"
 
 // Task parameters
 #define LEDS_TASK_FREQUENCY_HZ (100U)
@@ -54,6 +55,34 @@ TaskHandle_t ledsTaskHandle = NULL;
 
 // Forward declarations
 void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
+
+/**
+ * @brief Checks if LED notifications are allowed based on the current map state.
+ *
+ * @return true if LED notifications are allowed, false otherwise.
+ */
+bool ledsNotificationAllowed()
+{
+    if (isMapEnabled())
+        return true;
+
+    return false;
+}
+
+/**
+ * @brief Notifies via LEDs with the specified color, fade duration, and fade cycles.
+ *
+ * This function checks if LED notifications are allowed and then triggers a circular LED effect accordingly.
+ *
+ * @param color The color to set the circle LEDs to.
+ * @param fadeDuration The duration of the fade effect in milliseconds.
+ * @param fadeCycles The number of times the effect should repeat. Use LOOP_INDEFINITELY for infinite.
+ */
+void ledsNotify(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
+{
+    if (ledsNotificationAllowed())
+        circleLedEffect(color, fadeDuration, fadeCycles);
+}
 
 /**
  * @brief Resets the states of all LEDs.
