@@ -124,7 +124,7 @@ void connectToAWS()
     static bool connAttemptDisplayed = false;
 
     // Indicate connection attempt if the map is turned on
-    if (isMapOn() && !connAttemptDisplayed)
+    if (isMapEnabled() && !connAttemptDisplayed)
     {
         circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
         connAttemptDisplayed = true;
@@ -150,7 +150,7 @@ void connectToAWS()
             // Connection successful
             Serial.println(F("Connected to AWS IoT"));
             reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
-            connAttemptDisplayed = false;  // Reset flag
+            connAttemptDisplayed = false;             // Reset flag
 
             // Subscribe to the generic MQTT topics
             client.subscribe(MQTT_SUB_TOPIC_LEDS);
@@ -164,8 +164,10 @@ void connectToAWS()
             publishStatusAWS();
 
             // Indicate connection success if the map is turned on
-            if (isMapOn())
+            if (isMapEnabled())
+            {
                 circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+            }
         }
         else
         {
@@ -393,7 +395,7 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
     // Dispatch to appropriate handler based on topic
     if (strcmp(topic, ledsSubTopic) == 0 || strcmp(topic, MQTT_SUB_TOPIC_LEDS) == 0)
     {
-        if (isMapOn()) // Parse and set LEDs only if the map is turned on
+        if (isMapEnabled()) // Parse and set LEDs only if the map is turned on
             setLedsFromJsonDoc(doc);
     }
     else if (strcmp(topic, updateSubTopic) == 0 || strcmp(topic, MQTT_SUB_TOPIC_UPDATE) == 0)

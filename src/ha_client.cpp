@@ -168,7 +168,7 @@ void periodicStatusPublishHA()
  *
  * @return true if the map is enabled (flashings allowed), false otherwise.
  */
-bool isMapOn()
+bool isMapEnabled()
 {
 #ifdef USE_HOME_ASSISTANT
     return mapState;

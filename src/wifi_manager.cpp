@@ -10,6 +10,7 @@
 #include "constants.h"
 #include "custom_html.h"
 #include "drd.h"
+#include "ha_client.h"
 #include "leds.h"
 #include "wifi_manager.h"
 
@@ -67,7 +68,8 @@ bool initialConfig; // = false;
 void connectMultiWiFi()
 {
     // Indicate connecting to WiFi
-    circleLedEffect(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+    if (isMapEnabled())
+        circleLedEffect(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
 
     LOGERROR(F("ConnectMultiWiFi with :"));
 
@@ -107,7 +109,8 @@ void connectMultiWiFi()
     if (status == WL_CONNECTED)
     {
         // Indicate WiFi connected with purple color (waiting for AWS connection)
-        circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+        if (isMapEnabled())
+            circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
         LOGERROR1(F("WiFi connected after time: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
@@ -204,7 +207,8 @@ void initWiFiManager(const char *chipID)
             Serial.println(F("Initializing LittleFS failed!. Please use SPIFFS or EEPROM. Stay forever..."));
 
             // Indicate error
-            circleLedEffect(CRGB::Red, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+            if (isMapEnabled())
+                circleLedEffect(CRGB::Red, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
             while (true)
                 delay(1);
@@ -361,7 +365,8 @@ void initWiFiManager(const char *chipID)
         if (WiFi.status() == WL_CONNECTED)
         {
             // Indicate WiFi connected with purple color (waiting for AWS connection)
-            circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+            if (isMapEnabled())
+                circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
             Serial.print(F("connected. Local IP: "));
             Serial.println(WiFi.localIP());
