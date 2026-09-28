@@ -5,7 +5,7 @@
 #include <WiFiClient.h>
 
 void haClientTaskInit(char *clientId, size_t idLength);
-bool isMapOn();
+bool isMapEnabled();
 
 // Variables used in status publishing
 extern uint32_t awsReconnectAttempts;

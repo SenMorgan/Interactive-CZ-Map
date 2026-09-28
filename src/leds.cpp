@@ -2,8 +2,9 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include <FastLED.h>
-#include "constants.h"
 #include "leds.h"
+#include "constants.h"
+#include "ha_client.h"
 
 // Task parameters
 #define LEDS_TASK_FREQUENCY_HZ (100U)
@@ -52,8 +53,40 @@ LedState ledStates[LEDS_COUNT];
 // Variable to store task handle
 TaskHandle_t ledsTaskHandle = NULL;
 
+// Variable to store initial notification control pin state
+bool notifyAllowed = false;
+
 // Forward declarations
 void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
+
+/**
+ * @brief Reads the status of the notification control pin and updates the internal state.
+ */
+void getNotifyControlPinStatus()
+{
+    // Configure the notification control pin as input with pull-up resistor
+    pinMode(NOTIFY_CTRL_PIN, INPUT_PULLUP);
+    delay(10); // Small delay to allow the pin state to stabilize
+
+    // If jumper between NOTIFY_CTRL_PIN and GND is present, then notifications are NOT allowed
+    notifyAllowed = (digitalRead(NOTIFY_CTRL_PIN) == HIGH);
+}
+
+/**
+ * @brief Notifies via LEDs with the specified color, fade duration, and fade cycles.
+ *
+ * This function checks if LED notifications are allowed and then triggers a circular LED effect accordingly.
+ *
+ * @param color The color to set the circle LEDs to.
+ * @param fadeDuration The duration of the fade effect in milliseconds.
+ * @param fadeCycles The number of times the effect should repeat. Use LOOP_INDEFINITELY for infinite.
+ */
+void ledsNotify(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
+{
+    // Only trigger the LED effect if notifications are allowed and the map is enabled
+    if (notifyAllowed && isMapEnabled())
+        circleLedEffect(color, fadeDuration, fadeCycles);
+}
 
 /**
  * @brief Resets the states of all LEDs.
@@ -419,6 +452,10 @@ void ledsTask(void *pvParameters)
  */
 void ledsTaskInit(void)
 {
+    // Get the initial status of the notification control pin
+    getNotifyControlPinStatus();
+
+    // Create the LEDs task and assign it to a specific core
     if (xTaskCreatePinnedToCore(ledsTask,
                                 "ledsTask",
                                 LEDS_TASK_STACK_SIZE,

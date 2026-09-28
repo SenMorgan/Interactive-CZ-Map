@@ -121,10 +121,14 @@ void connectToAWS()
 {
     static uint32_t reconnectDelay = 0;
     static uint32_t lastReconnectAttempt = 0;
+    static bool connAttemptShown = false;
 
     // Indicate connection attempt if the map is turned on
-    if (isMapOn())
-        circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+    if (!connAttemptShown)
+    {
+        ledsNotify(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+        connAttemptShown = true;
+    }
 
     // Check if the client ID is set
     if (!clientId)
@@ -146,6 +150,7 @@ void connectToAWS()
             // Connection successful
             Serial.println(F("Connected to AWS IoT"));
             reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
+            connAttemptShown = false;             // Reset flag
 
             // Subscribe to the generic MQTT topics
             client.subscribe(MQTT_SUB_TOPIC_LEDS);
@@ -159,8 +164,7 @@ void connectToAWS()
             publishStatusAWS();
 
             // Indicate connection success if the map is turned on
-            if (isMapOn())
-                circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+            ledsNotify(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
         }
         else
         {
@@ -187,8 +191,32 @@ void connectToAWS()
 void maintainAWSConnection()
 {
     // If the client is connected, simply return
-    if (client.loop())
+    client.loop();
+
+    if (client.connected())
+    {
         return;
+    }
+    else
+    {
+        Serial.printf("AWS IoT client disconnected. MQTT error code: %d\n", client.state());
+        // Optionally, print a user-friendly message based on the error code:
+        switch (client.state())
+        {
+            case MQTT_CONNECTION_TIMEOUT:
+                Serial.println("Connection timeout. Please check your network.");
+                break;
+            case MQTT_CONNECTION_LOST:
+                Serial.println("Connection lost. Trying to reconnect...");
+                break;
+            case MQTT_CONNECT_FAILED:
+                Serial.println("Connection failed. Check credentials and endpoint.");
+                break;
+            // Add more cases as needed
+            default:
+                Serial.println("Unknown MQTT error.");
+        }
+    }
 
     // Do not attempt to reconnect if WiFi is not connected or ESP does not have assigned IP
     if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == INADDR_NONE)
@@ -364,7 +392,7 @@ void messageHandler(char *topic, byte *payload, unsigned int length)
     // Dispatch to appropriate handler based on topic
     if (strcmp(topic, ledsSubTopic) == 0 || strcmp(topic, MQTT_SUB_TOPIC_LEDS) == 0)
     {
-        if (isMapOn()) // Parse and set LEDs only if the map is turned on
+        if (isMapEnabled()) // Parse and set LEDs only if the map is turned on
             setLedsFromJsonDoc(doc);
     }
     else if (strcmp(topic, updateSubTopic) == 0 || strcmp(topic, MQTT_SUB_TOPIC_UPDATE) == 0)

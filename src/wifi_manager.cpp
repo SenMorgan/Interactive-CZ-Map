@@ -63,18 +63,24 @@ String Router_Pass;
 
 // Indicates whether ESP has WiFi credentials saved from previous session, or double reset detected
 bool initialConfig; // = false;
+// Flag to indicate if a connection attempt has been shown on the map
+bool connAttemptShown = false;
 
 void connectMultiWiFi()
 {
     // Indicate connecting to WiFi
-    circleLedEffect(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+    if (!connAttemptShown)
+    {
+        ledsNotify(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+        connAttemptShown = true;
+    }
 
     LOGERROR(F("ConnectMultiWiFi with :"));
 
-    if ((Router_SSID != "") && (Router_Pass != ""))
+    if ((Router_SSID != ""))
     {
-        LOGERROR3(F("* Flash-stored Router_SSID = "), Router_SSID, F(", Router_Pass = "), Router_Pass);
-        LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
+        LOGERROR1(F("* Flash-stored Router_SSID = "), Router_SSID);
+        LOGERROR1(F("* Add SSID = "), Router_SSID);
         wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
     }
 
@@ -83,7 +89,7 @@ void connectMultiWiFi()
         // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
         if ((String(WM_config.WiFi_Creds[i].wifi_ssid) != "") && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE))
         {
-            LOGERROR3(F("* Additional SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw);
+            LOGERROR1(F("* Additional SSID = "), WM_config.WiFi_Creds[i].wifi_ssid);
         }
     }
 
@@ -107,11 +113,14 @@ void connectMultiWiFi()
     if (status == WL_CONNECTED)
     {
         // Indicate WiFi connected with purple color (waiting for AWS connection)
-        circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+        ledsNotify(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
         LOGERROR1(F("WiFi connected after time: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
         LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
+
+        // Reset the connection attempt flag since WiFi is now connected
+        connAttemptShown = false;
     }
     else
     {
@@ -204,7 +213,7 @@ void initWiFiManager(const char *chipID)
             Serial.println(F("Initializing LittleFS failed!. Please use SPIFFS or EEPROM. Stay forever..."));
 
             // Indicate error
-            circleLedEffect(CRGB::Red, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+            ledsNotify(CRGB::Red, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
             while (true)
                 delay(1);
@@ -247,7 +256,7 @@ void initWiFiManager(const char *chipID)
     // Don't permit NULL password
     if ((Router_SSID != "") && (Router_Pass != ""))
     {
-        LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
+        LOGERROR1(F("* Add SSID = "), Router_SSID);
         wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
 
         ESPAsync_wifiManager.setConfigPortalTimeout(120); // If no access point name has been previously entered disable timeout.
@@ -286,7 +295,7 @@ void initWiFiManager(const char *chipID)
                                             WM_config.WiFi_Creds[1].wifi_ssid, WM_config.WiFi_Creds[1].wifi_pw);
 
         // Indicate that Config Portal is running
-        circleLedEffect(CRGB::Orange, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+        ledsNotify(CRGB::Orange, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
 
         // Blocking loop waiting to enter Config Portal and update WiFi Credentials
         if (!ESPAsync_wifiManager.startConfigPortal(AP_SSID, AP_PASSWORD))
@@ -317,7 +326,7 @@ void initWiFiManager(const char *chipID)
             // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
             if ((String(WM_config.WiFi_Creds[i].wifi_ssid) != "") && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE))
             {
-                LOGERROR3(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw);
+                LOGERROR1(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid);
                 wifiMulti.addAP(WM_config.WiFi_Creds[i].wifi_ssid, WM_config.WiFi_Creds[i].wifi_pw);
             }
         }
@@ -340,7 +349,7 @@ void initWiFiManager(const char *chipID)
             // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
             if ((String(WM_config.WiFi_Creds[i].wifi_ssid) != "") && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE))
             {
-                LOGERROR3(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw);
+                LOGERROR1(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid);
                 wifiMulti.addAP(WM_config.WiFi_Creds[i].wifi_ssid, WM_config.WiFi_Creds[i].wifi_pw);
             }
         }
@@ -361,7 +370,7 @@ void initWiFiManager(const char *chipID)
         if (WiFi.status() == WL_CONNECTED)
         {
             // Indicate WiFi connected with purple color (waiting for AWS connection)
-            circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+            ledsNotify(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
 
             Serial.print(F("connected. Local IP: "));
             Serial.println(WiFi.localIP());

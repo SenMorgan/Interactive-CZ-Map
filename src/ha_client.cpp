@@ -157,7 +157,7 @@ void publishStatusHA()
  */
 void periodicStatusPublishHA()
 {
-#ifdef HA_MQTT_BROKER_HOST
+#ifdef USE_HOME_ASSISTANT
     if (millis() - lastHAPublishTime >= HA_STATUS_PUBLISH_INTERVAL)
         publishStatusHA();
 #endif
@@ -168,9 +168,9 @@ void periodicStatusPublishHA()
  *
  * @return true if the map is enabled (flashings allowed), false otherwise.
  */
-bool isMapOn()
+bool isMapEnabled()
 {
-#ifdef HA_MQTT_BROKER_HOST
+#ifdef USE_HOME_ASSISTANT
     return mapState;
 #else
     return true;

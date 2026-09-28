@@ -1,19 +1,16 @@
 #include <WiFi.h>
 #include "esp32_utils.h"    // Required for CHIP_ID_LENGTH
-
 #include "constants.h"
 #include "aws_iot.h"
 #include "leds.h"
 #include "wifi_manager.h"
-
-#ifdef USE_HOME_ASSISTANT
 #include "ha_client.h"
-#endif
 
 void setup()
 {
     initSerial();
 
+    // Get the ESP32 Chip ID
     char chipID[CHIP_ID_LENGTH];
     getEsp32ChipID(chipID, sizeof(chipID));
     Serial.print(F("Initializing Interactive CZ Map device with Chip ID: "));
