@@ -53,20 +53,23 @@ LedState ledStates[LEDS_COUNT];
 // Variable to store task handle
 TaskHandle_t ledsTaskHandle = NULL;
 
+// Variable to store initial notification control pin state
+bool notifyAllowed = false;
+
 // Forward declarations
 void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
 
 /**
- * @brief Checks if LED notifications are allowed based on the current map state.
- *
- * @return true if LED notifications are allowed, false otherwise.
+ * @brief Reads the status of the notification control pin and updates the internal state.
  */
-bool ledsNotificationAllowed()
+void getNotifyControlPinStatus()
 {
-    if (isMapEnabled())
-        return true;
+    // Configure the notification control pin as input with pull-up resistor
+    pinMode(NOTIFY_CTRL_PIN, INPUT_PULLUP);
+    delay(10); // Small delay to allow the pin state to stabilize
 
-    return false;
+    // If jumper between NOTIFY_CTRL_PIN and GND is present, then notifications are NOT allowed
+    notifyAllowed = (digitalRead(NOTIFY_CTRL_PIN) == HIGH);
 }
 
 /**
@@ -80,7 +83,8 @@ bool ledsNotificationAllowed()
  */
 void ledsNotify(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
 {
-    if (ledsNotificationAllowed())
+    // Only trigger the LED effect if notifications are allowed and the map is enabled
+    if (notifyAllowed && isMapEnabled())
         circleLedEffect(color, fadeDuration, fadeCycles);
 }
 
@@ -448,6 +452,10 @@ void ledsTask(void *pvParameters)
  */
 void ledsTaskInit(void)
 {
+    // Get the initial status of the notification control pin
+    getNotifyControlPinStatus();
+
+    // Create the LEDs task and assign it to a specific core
     if (xTaskCreatePinnedToCore(ledsTask,
                                 "ledsTask",
                                 LEDS_TASK_STACK_SIZE,

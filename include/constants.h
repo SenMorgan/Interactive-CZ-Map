@@ -61,6 +61,7 @@
 #define LEDS_COUNT 72
 
 // IO pins
+#define NOTIFY_CTRL_PIN GPIO_NUM_23
 #define LEDS_PIN GPIO_NUM_25
 
 #endif // _CONSTANTS_H

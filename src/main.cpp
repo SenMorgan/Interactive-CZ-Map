@@ -10,6 +10,7 @@ void setup()
 {
     initSerial();
 
+    // Get the ESP32 Chip ID
     char chipID[CHIP_ID_LENGTH];
     getEsp32ChipID(chipID, sizeof(chipID));
     Serial.print(F("Initializing Interactive CZ Map device with Chip ID: "));
