@@ -64,12 +64,17 @@ String Router_Pass;
 
 // Indicates whether ESP has WiFi credentials saved from previous session, or double reset detected
 bool initialConfig; // = false;
+// Flag to indicate if a connection attempt has been shown on the map
+bool connAttemptShown = false;
 
 void connectMultiWiFi()
 {
     // Indicate connecting to WiFi
-    if (isMapEnabled())
+    if (isMapEnabled() && !connAttemptShown)
+    {
         circleLedEffect(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+        connAttemptShown = true;
+    }
 
     LOGERROR(F("ConnectMultiWiFi with :"));
 
@@ -115,6 +120,9 @@ void connectMultiWiFi()
         LOGERROR1(F("WiFi connected after time: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
         LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
+
+        // Reset the connection attempt flag since WiFi is now connected
+        connAttemptShown = false;
     }
     else
     {
