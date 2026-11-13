@@ -20,8 +20,8 @@
 #define CIRCLE_EFFECT_BRIGHTNESS      50
 #define PROGRESS_INDICATOR_BRIGHTNESS 50
 
-// Number of green flashes shown when the system status returns to idle
-#define STATUS_SUCCESS_FADE_CYCLES 3
+// Number of green flashes (ring) shown when the system status returns to idle
+#define STATUS_SUCCESS_FADE_CYCLES 2
 
 // Define the array of LEDs in the circle in clockwise order
 const uint8_t CIRCLE_LEDS_ARRAY[] = {1, 2, 5, 7, 12, 21, 29, 31, 17, 25, 30, 36, 35, 42, 44, 56, 61, 65, 68,
