@@ -38,6 +38,10 @@
 // before the reconnect through WiFiMulti is forced and indicated on the map (in milliseconds)
 #define WIFI_RECONNECT_GRACE_PERIOD 5000L
 
+// How long the WiFi may stay down before the ESP32 is restarted (in milliseconds).
+// It applies to the first connection after boot and to a connection lost at runtime.
+#define WIFI_DOWN_RESTART_TIMEOUT 60000L
+
 typedef struct
 {
     char wifi_ssid[SSID_MAX_LEN];
@@ -71,13 +75,18 @@ bool initialConfig; // = false;
 /**
  * @brief Connects to one of the access points added to WiFiMulti.
  *
- * The function blocks until the connection is established. The connection attempt is
- * indicated on the map. If the connection fails, the ESP32 is restarted.
+ * The function blocks until the connection is established or the timeout expires.
+ * The connection attempt is indicated on the map. If the connection is not
+ * established within the timeout, the ESP32 is restarted.
+ *
+ * @param timeoutMs How long to keep trying before the ESP32 is restarted (in milliseconds).
  *
  * @note The access points are added to WiFiMulti in initWiFiManager().
  */
-void connectMultiWiFi()
+void connectMultiWiFi(uint32_t timeoutMs)
 {
+    uint32_t startTime = millis();
+
     // Indicate connecting to WiFi
     ledsSetStatus(LedsStatus::WIFI_CONNECTING);
 
@@ -100,31 +109,36 @@ void connectMultiWiFi()
     LOGERROR(F("Connecting MultiWifi..."));
 
     int i = 0;
+    uint8_t status = WL_DISCONNECTED;
 
-    uint8_t status = wifiMulti.run();
-    delay(WIFI_MULTI_1ST_CONNECT_WAITING_MS);
-
-    while ((i++ < 20) && (status != WL_CONNECTED))
+    // Keep scanning and connecting until the connection is established or the timeout expires
+    do
     {
-        status = WiFi.status();
+        i++;
+        status = wifiMulti.run();
+        delay(i == 1 ? WIFI_MULTI_1ST_CONNECT_WAITING_MS : WIFI_MULTI_CONNECT_WAITING_MS);
 
-        if (status == WL_CONNECTED)
-            break;
-        else
-            delay(WIFI_MULTI_CONNECT_WAITING_MS);
-    }
+        // Give the connection some time to come up before the next scan
+        for (uint8_t wait = 0; wait < 10 && status != WL_CONNECTED && millis() - startTime < timeoutMs; wait++)
+        {
+            status = WiFi.status();
+
+            if (status != WL_CONNECTED)
+                delay(WIFI_MULTI_CONNECT_WAITING_MS);
+        }
+    } while (status != WL_CONNECTED && millis() - startTime < timeoutMs);
 
     if (status == WL_CONNECTED)
     {
         // The WiFi indication stays on the map until the AWS module takes over:
         // it switches to the AWS indication or clears it if the MQTT connection is alive
-        LOGERROR1(F("WiFi connected after time: "), i);
+        LOGERROR1(F("WiFi connected after attempts: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
         LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
     }
     else
     {
-        LOGERROR(F("WiFi not connected"));
+        LOGERROR(F("WiFi not connected. Restarting..."));
 
         // Restart after unsuccessful connection
         ESP.restart();
@@ -359,7 +373,7 @@ void initWiFiManager(const char *chipID)
         {
             Serial.println(F("ConnectMultiWiFi in setup"));
 
-            connectMultiWiFi();
+            connectMultiWiFi(WIFI_DOWN_RESTART_TIMEOUT);
         }
     }
     else
@@ -386,7 +400,8 @@ void initWiFiManager(const char *chipID)
  * This function checks the WiFi connection status at regular intervals defined by WIFI_CHECK_INTERVAL.
  * If the WiFi is disconnected, it first gives the WiFi driver WIFI_RECONNECT_GRACE_PERIOD to reconnect
  * on its own, so that a short dropout does not interrupt the LED effects. After that it reconnects
- * through WiFiMulti, which blocks, indicates the attempt on the map and restarts the ESP32 on failure.
+ * through WiFiMulti, which blocks and indicates the attempt on the map. The ESP32 is restarted
+ * when the WiFi stays down for WIFI_DOWN_RESTART_TIMEOUT in total.
  *
  * @note This function should be called periodically within the main loop to ensure continuous WiFi connectivity.
  */
@@ -419,7 +434,7 @@ void handleWiFi()
         else if (timeNow - wifiLostTime >= WIFI_RECONNECT_GRACE_PERIOD)
         {
             Serial.println(F("WiFi still lost. Call connectMultiWiFi in loop"));
-            connectMultiWiFi();
+            connectMultiWiFi(WIFI_DOWN_RESTART_TIMEOUT - (timeNow - wifiLostTime));
             wifiLost = false;
         }
     }
