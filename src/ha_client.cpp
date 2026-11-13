@@ -4,15 +4,21 @@
 
 #include "ha_client.h"
 #include "constants.h"
+#include "leds.h"
+
+// The Home Assistant client is optional. Without USE_HOME_ASSISTANT only the
+// isMapEnabled() stub at the end of this file is compiled, so the HA_MQTT_*
+// settings are not required and no second MQTT client is created.
+#ifdef USE_HOME_ASSISTANT
 
 // Initialize Wi-Fi and MQTT client
 WiFiClient haClientNet;
 PubSubClient haClient(haClientNet);
 
 // Interval for publishing device status (in milliseconds)
-#define HA_STATUS_PUBLISH_INTERVAL 10 * 1000
+#define HA_STATUS_PUBLISH_INTERVAL (10 * 1000)
 // Initial delay before attempting to reconnect to Home Assistant MQTT Broker (in milliseconds)
-#define RECONNECT_INITIAL_DELAY    100
+#define RECONNECT_INITIAL_DELAY    1000
 // Maximum delay between reconnection attempts to Home Assistant MQTT Broker (in milliseconds)
 #define RECONNECT_MAX_DELAY        10000
 // MQTT buffer size for handling larger messages
@@ -58,27 +64,25 @@ void publishStatusHA();
  */
 void haMessageHandler(char *topic, byte *payload, unsigned int length)
 {
-    String message;
-    for (unsigned int i = 0; i < length; i++)
-    {
-        message += (char)payload[i];
-    }
-
     if (strcmp(topic, enableSubTopic) == 0)
     {
-        if (message == "ON")
+        bool turnOn = (length == 2 && memcmp(payload, "ON", 2) == 0);
+        bool turnOff = (length == 3 && memcmp(payload, "OFF", 3) == 0);
+
+        if (turnOn || turnOff)
         {
-            mapState = true;
-            Serial.println("Map turned ON");
-        }
-        else if (message == "OFF")
-        {
-            mapState = false;
-            Serial.println("Map turned OFF");
+            Serial.printf("Map turned %s\n", turnOn ? "ON" : "OFF");
+
+            // Update the LEDs only when the state has changed: turning the map off clears them
+            if (mapState != turnOn)
+            {
+                mapState = turnOn;
+                ledsApplyMapState();
+            }
         }
         else
         {
-            Serial.printf("Invalid message received on topic '%s': %s\n", topic, message.c_str());
+            Serial.printf("Invalid message received on topic '%s': %.*s\n", topic, (int)length, (const char *)payload);
         }
 
         // Publish the current status after receiving the enable command
@@ -157,10 +161,8 @@ void publishStatusHA()
  */
 void periodicStatusPublishHA()
 {
-#ifdef USE_HOME_ASSISTANT
     if (millis() - lastHAPublishTime >= HA_STATUS_PUBLISH_INTERVAL)
         publishStatusHA();
-#endif
 }
 
 /**
@@ -170,11 +172,7 @@ void periodicStatusPublishHA()
  */
 bool isMapEnabled()
 {
-#ifdef USE_HOME_ASSISTANT
     return mapState;
-#else
-    return true;
-#endif
 }
 
 /**
@@ -338,8 +336,8 @@ void connectToHA(const char *clientId)
     // Attempt to connect only if the delay has passed
     if (!haClient.connected() && (timeNow - lastReconnectAttempt >= reconnectDelay))
     {
-        haReconnectAttempts++;          // Increment the number of reconnection attempts
-        lastReconnectAttempt = timeNow; // Update the last reconnect attempt time
+        haReconnectAttempts++; // Increment the number of reconnection attempts
+        Serial.println(F("Connecting to Home Assistant MQTT Broker..."));
 
         if (haClient.connect(clientId, HA_MQTT_USER, HA_MQTT_PASS))
         {
@@ -357,14 +355,19 @@ void connectToHA(const char *clientId)
         else
         {
             // Connection failed - apply exponential backoff
-            Serial.printf("Connection to Home Assistant MQTT Broker failed, rc=%d\n", haClient.state());
-            Serial.printf("Retrying in %lu ms\n", reconnectDelay);
-
-            if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
+            if (reconnectDelay == 0)
+                reconnectDelay = RECONNECT_INITIAL_DELAY;
+            else if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
                 reconnectDelay *= 2;
             else
                 reconnectDelay = RECONNECT_MAX_DELAY;
+
+            Serial.printf("Connection to Home Assistant MQTT Broker failed, rc=%d\n", haClient.state());
+            Serial.printf("Retrying in %lu ms\n", (unsigned long)reconnectDelay);
         }
+
+        // Update the last reconnect attempt time after the (blocking) attempt
+        lastReconnectAttempt = millis();
     }
 }
 
@@ -390,26 +393,20 @@ void haClientTask(void *pvParameters)
     snprintf(enableSubTopic, sizeof(enableSubTopic), "%s/%s", MQTT_SUB_TOPIC_ENABLE, clientId);
     snprintf(statusPubTopic, sizeof(statusPubTopic), "%s/%s", MQTT_PUB_TOPIC_STATUS, clientId);
 
-    // Attempt to connect to the Home Assistant MQTT Broker
-    Serial.println(F("Connecting to Home Assistant MQTT Broker..."));
-    Serial.printf("Client ID: %s\n", clientId);
-    connectToHA(clientId);
+    Serial.printf("Home Assistant MQTT client ID: %s\n", clientId);
 
+    // The task function must never return, otherwise FreeRTOS aborts and the ESP32 reboots
     for (;;)
     {
-        // If the client is connected, simply return
         if (haClient.loop())
         {
+            // The client is connected
             periodicStatusPublishHA();
         }
-        else
+        else if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != INADDR_NONE)
         {
-            // Do not attempt to reconnect if WiFi is not connected or ESP does not have assigned IP
-            if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == INADDR_NONE)
-                return;
-
-            // If the client is not connected, attempt to reconnect
-            Serial.println(F("Home Assistant MQTT client disconnected. Attempting to reconnect..."));
+            // The client is not connected - attempt to (re)connect, but only if
+            // WiFi is connected and ESP has assigned IP
             connectToHA(clientId);
         }
 
@@ -434,8 +431,9 @@ void haClientTaskInit(char *clientId, size_t idLength)
     }
 
     // Copy the client ID to a new buffer, otherwise it will be lost when the task is created
-    char *clientIdCopy = new char[idLength];
+    char *clientIdCopy = new char[idLength + 1];
     strncpy(clientIdCopy, clientId, idLength);
+    clientIdCopy[idLength] = '\0';
 
     if (xTaskCreatePinnedToCore(haClientTask,
                                 "haClientTask",
@@ -449,3 +447,17 @@ void haClientTaskInit(char *clientId, size_t idLength)
         delete[] clientIdCopy;
     }
 }
+
+#else // USE_HOME_ASSISTANT
+
+/**
+ * @brief Checks if the map is enabled.
+ *
+ * @return Always true, because the map cannot be turned off without Home Assistant.
+ */
+bool isMapEnabled()
+{
+    return true;
+}
+
+#endif // USE_HOME_ASSISTANT

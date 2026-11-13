@@ -34,6 +34,10 @@
 
 #define WIFI_CHECK_INTERVAL 1000L
 
+// How long to wait for the automatic reconnect of the WiFi driver after the connection is lost,
+// before the reconnect through WiFiMulti is forced and indicated on the map (in milliseconds)
+#define WIFI_RECONNECT_GRACE_PERIOD 5000L
+
 typedef struct
 {
     char wifi_ssid[SSID_MAX_LEN];
@@ -63,25 +67,25 @@ String Router_Pass;
 
 // Indicates whether ESP has WiFi credentials saved from previous session, or double reset detected
 bool initialConfig; // = false;
-// Flag to indicate if a connection attempt has been shown on the map
-bool connAttemptShown = false;
 
+/**
+ * @brief Connects to one of the access points added to WiFiMulti.
+ *
+ * The function blocks until the connection is established. The connection attempt is
+ * indicated on the map. If the connection fails, the ESP32 is restarted.
+ *
+ * @note The access points are added to WiFiMulti in initWiFiManager().
+ */
 void connectMultiWiFi()
 {
     // Indicate connecting to WiFi
-    if (!connAttemptShown)
-    {
-        ledsNotify(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
-        connAttemptShown = true;
-    }
+    ledsSetStatus(LedsStatus::WIFI_CONNECTING);
 
     LOGERROR(F("ConnectMultiWiFi with :"));
 
     if ((Router_SSID != ""))
     {
         LOGERROR1(F("* Flash-stored Router_SSID = "), Router_SSID);
-        LOGERROR1(F("* Add SSID = "), Router_SSID);
-        wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
     }
 
     for (uint8_t i = 0; i < NUM_WIFI_CREDENTIALS; i++)
@@ -112,15 +116,11 @@ void connectMultiWiFi()
 
     if (status == WL_CONNECTED)
     {
-        // Indicate WiFi connected with purple color (waiting for AWS connection)
-        ledsNotify(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
-
+        // The WiFi indication stays on the map until the AWS module takes over:
+        // it switches to the AWS indication or clears it if the MQTT connection is alive
         LOGERROR1(F("WiFi connected after time: "), i);
         LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
         LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP());
-
-        // Reset the connection attempt flag since WiFi is now connected
-        connAttemptShown = false;
     }
     else
     {
@@ -213,7 +213,7 @@ void initWiFiManager(const char *chipID)
             Serial.println(F("Initializing LittleFS failed!. Please use SPIFFS or EEPROM. Stay forever..."));
 
             // Indicate error
-            ledsNotify(CRGB::Red, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+            ledsSetStatus(LedsStatus::FATAL_ERROR);
 
             while (true)
                 delay(1);
@@ -227,8 +227,9 @@ void initWiFiManager(const char *chipID)
 
     unsigned long startedAt = millis();
 
-    // Compose hostname from chipID and set it
-    const char *hostname = (String(HOSTNAME_PREFIX) + "_" + String(chipID)).c_str();
+    // Compose hostname from chipID and set it. The String must stay alive while the pointer is used
+    String hostnameStr = String(HOSTNAME_PREFIX) + "_" + String(chipID);
+    const char *hostname = hostnameStr.c_str();
     WiFi.setHostname(hostname);
     Serial.printf("Hostname: %s\n", hostname);
 
@@ -248,8 +249,8 @@ void initWiFiManager(const char *chipID)
     Router_SSID = ESPAsync_wifiManager.WiFi_SSID();
     Router_Pass = ESPAsync_wifiManager.WiFi_Pass();
 
-    // Remove this line if you do not want to see WiFi password printed
-    Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
+    // Do not print the WiFi password
+    Serial.println("ESP Self-Stored: SSID = " + Router_SSID);
 
     bool configDataLoaded = false;
 
@@ -295,7 +296,7 @@ void initWiFiManager(const char *chipID)
                                             WM_config.WiFi_Creds[1].wifi_ssid, WM_config.WiFi_Creds[1].wifi_pw);
 
         // Indicate that Config Portal is running
-        ledsNotify(CRGB::Orange, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+        ledsSetStatus(LedsStatus::CONFIG_PORTAL);
 
         // Blocking loop waiting to enter Config Portal and update WiFi Credentials
         if (!ESPAsync_wifiManager.startConfigPortal(AP_SSID, AP_PASSWORD))
@@ -369,9 +370,6 @@ void initWiFiManager(const char *chipID)
 
         if (WiFi.status() == WL_CONNECTED)
         {
-            // Indicate WiFi connected with purple color (waiting for AWS connection)
-            ledsNotify(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
-
             Serial.print(F("connected. Local IP: "));
             Serial.println(WiFi.localIP());
         }
@@ -386,24 +384,43 @@ void initWiFiManager(const char *chipID)
  * @brief Handles WiFi connection status and attempts reconnection if disconnected.
  *
  * This function checks the WiFi connection status at regular intervals defined by WIFI_CHECK_INTERVAL.
- * If the WiFi is disconnected, it attempts to reconnect.
- * It also updates the double reset detector loop to recognize when the timeout expires or a reset is detected.
+ * If the WiFi is disconnected, it first gives the WiFi driver WIFI_RECONNECT_GRACE_PERIOD to reconnect
+ * on its own, so that a short dropout does not interrupt the LED effects. After that it reconnects
+ * through WiFiMulti, which blocks, indicates the attempt on the map and restarts the ESP32 on failure.
  *
  * @note This function should be called periodically within the main loop to ensure continuous WiFi connectivity.
  */
 void handleWiFi()
 {
     static uint32_t lastWiFiCheck = 0;
+    static uint32_t wifiLostTime = 0;
+    static bool wifiLost = false;
     uint32_t timeNow = millis();
 
-    // Check WiFi every WIFI_CHECK_INTERVAL seconds.
+    // Check WiFi every WIFI_CHECK_INTERVAL milliseconds.
     if (timeNow - lastWiFiCheck > WIFI_CHECK_INTERVAL)
     {
-        if ((WiFi.status() != WL_CONNECTED))
-        {
-            Serial.println(F("\nWiFi lost. Call connectMultiWiFi in loop"));
-            connectMultiWiFi();
-        }
         lastWiFiCheck = timeNow;
+
+        if (WiFi.status() == WL_CONNECTED)
+        {
+            if (wifiLost)
+            {
+                Serial.println(F("WiFi reconnected"));
+                wifiLost = false;
+            }
+        }
+        else if (!wifiLost)
+        {
+            Serial.println(F("\nWiFi lost. Waiting for automatic reconnect"));
+            wifiLost = true;
+            wifiLostTime = timeNow;
+        }
+        else if (timeNow - wifiLostTime >= WIFI_RECONNECT_GRACE_PERIOD)
+        {
+            Serial.println(F("WiFi still lost. Call connectMultiWiFi in loop"));
+            connectMultiWiFi();
+            wifiLost = false;
+        }
     }
 }

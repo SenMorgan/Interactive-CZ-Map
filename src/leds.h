@@ -16,12 +16,23 @@ struct LedCommand
     CRGB color;            // Color of the LED
 };
 
+// System status shown on the map as a circle of LEDs
+enum class LedsStatus : uint8_t
+{
+    IDLE,            // Everything is connected - no indication (green flashes when leaving another status)
+    CONFIG_PORTAL,   // WiFi config portal is open (orange, slow)
+    WIFI_CONNECTING, // Connecting to WiFi (blue, slow)
+    AWS_CONNECTING,  // Connecting to AWS IoT (purple, fast)
+    FATAL_ERROR      // Unrecoverable error (red, fast)
+};
+
 void ledsTaskInit();
 void startProgressIndication();
 void stopProgressIndication();
 void progressIndicator(uint8_t progress, CRGB color);
 void pushLedCommand(uint8_t index, LedCommand command);
-void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles);
-void ledsNotify(CRGB color, uint16_t fadeDuration, int16_t fadeCycles);
+void ledsSetStatus(LedsStatus status);
+LedsStatus ledsGetStatus();
+void ledsApplyMapState();
 
 #endif // LEDS_H
