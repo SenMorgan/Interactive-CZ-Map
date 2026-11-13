@@ -30,12 +30,14 @@ PubSubClient haClient(haClientNet);
 #define HA_TASK_CORE       1 // Core 0 is used by the WiFi
 
 // MQTT topics
-#define MQTT_SUB_TOPIC_ENABLE MQTT_BASE_TOPIC "/cmd/enable"
+#define MQTT_SUB_TOPIC_ENABLE     MQTT_BASE_TOPIC "/cmd/enable"
+#define MQTT_SUB_TOPIC_BRIGHTNESS MQTT_BASE_TOPIC "/cmd/brightness"
 #define MQTT_PUB_TOPIC_STATUS MQTT_BASE_TOPIC "/status/device"
 
 // Home Assistant discovery topics
 #define MQTT_DISCOVERY_SWITCH_TOPIC "homeassistant/switch/int_cz_map/%s/config"
 #define MQTT_DISCOVERY_SENSOR_TOPIC "homeassistant/sensor/int_cz_map/%s/config"
+#define MQTT_DISCOVERY_NUMBER_TOPIC "homeassistant/number/int_cz_map/%s/config"
 
 // Buffer size for MQTT topics
 #define TOPIC_BUFFER_SIZE 128
@@ -47,6 +49,7 @@ uint32_t haReconnectAttempts = 0;
 
 // Variables to store MQTT topics
 static char enableSubTopic[sizeof(MQTT_SUB_TOPIC_ENABLE) + CHIP_ID_LENGTH + 1];
+static char brightnessSubTopic[sizeof(MQTT_SUB_TOPIC_BRIGHTNESS) + CHIP_ID_LENGTH + 1];
 static char statusPubTopic[sizeof(MQTT_PUB_TOPIC_STATUS) + CHIP_ID_LENGTH + 1];
 
 // Indicates if the map is turned on (flashings allowed)
@@ -86,6 +89,35 @@ void haMessageHandler(char *topic, byte *payload, unsigned int length)
         }
 
         // Publish the current status after receiving the enable command
+        publishStatusHA();
+    }
+    else if (strcmp(topic, brightnessSubTopic) == 0)
+    {
+        // Copy the payload to a null-terminated buffer and parse it as a number.
+        // Home Assistant may send an integer ("128") or a float ("128.0")
+        char text[16];
+        char *end = text;
+        float value = -1.0f;
+
+        if (length > 0 && length < sizeof(text))
+        {
+            memcpy(text, payload, length);
+            text[length] = '\0';
+            value = strtof(text, &end);
+        }
+
+        if (end != text && *end == '\0' && value >= 0.0f && value <= 255.0f)
+        {
+            uint8_t brightness = (uint8_t)(value + 0.5f);
+            ledsSetMainBrightness(brightness);
+            Serial.printf("Main brightness set to %d\n", brightness);
+        }
+        else
+        {
+            Serial.printf("Invalid message received on topic '%s': %.*s\n", topic, (int)length, (const char *)payload);
+        }
+
+        // Publish the current status after receiving the brightness command
         publishStatusHA();
     }
 }
@@ -141,6 +173,7 @@ void publishStatusHA()
     JsonDocument doc;
 
     doc["enabled"] = mapState ? "ON" : "OFF";
+    doc["brightness"] = ledsGetMainBrightness();
     doc["haReconnectAttempts"] = haReconnectAttempts;
     doc["awsReconnectAttempts"] = awsReconnectAttempts;
     doc["uptime"] = millis() / 1000;
@@ -220,6 +253,29 @@ void buildSwitchConfig(JsonDocument &doc, const char *clientId, char *topicBuffe
     setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
 }
 
+void buildBrightnessNumberConfig(JsonDocument &doc, const char *clientId, char *topicBuffer)
+{
+    // Create Unique ID
+    String uniqId = String(clientId) + "_brightness";
+
+    // Build topic for the number configuration using the Unique ID
+    snprintf(topicBuffer, TOPIC_BUFFER_SIZE, MQTT_DISCOVERY_NUMBER_TOPIC, uniqId.c_str());
+
+    // Build the number configuration. The command is retained by the broker,
+    // so the map gets the last value back when it connects
+    doc["name"] = "Brightness";
+    doc["uniq_id"] = uniqId;
+    doc["cmd_t"] = brightnessSubTopic;
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json.brightness }}";
+    doc["min"] = 0;
+    doc["max"] = 255;
+    doc["mode"] = "slider";
+    doc["ic"] = "mdi:brightness-6";
+    doc["ret"] = true;
+    setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+}
+
 void buildAwsReconAttSensorConfig(JsonDocument &doc, const char *clientId, char *topicBuffer)
 {
     // Create Unique ID
@@ -295,6 +351,11 @@ void publishDiscoveryConfig(const char *clientId)
     setOriginInfo(doc["o"].to<JsonObject>()); // Add origin info only for the first configuration
     publishJsonHA(topicBuffer, doc);
 
+    // Create and publish Brightness number configuration
+    doc.clear(); // Clear previous data
+    buildBrightnessNumberConfig(doc, clientId, topicBuffer);
+    publishJsonHA(topicBuffer, doc);
+
     // Create and publish AWS Reconnect Attempts sensor configuration
     doc.clear(); // Clear previous data
     buildAwsReconAttSensorConfig(doc, clientId, topicBuffer);
@@ -347,6 +408,7 @@ void connectToHA(const char *clientId)
 
             // Subscribe to topics
             haClient.subscribe(enableSubTopic);
+            haClient.subscribe(brightnessSubTopic);
 
             // Publish the device status after successful connection
             publishDiscoveryConfig(clientId);
@@ -391,6 +453,7 @@ void haClientTask(void *pvParameters)
 
     // Compose topics
     snprintf(enableSubTopic, sizeof(enableSubTopic), "%s/%s", MQTT_SUB_TOPIC_ENABLE, clientId);
+    snprintf(brightnessSubTopic, sizeof(brightnessSubTopic), "%s/%s", MQTT_SUB_TOPIC_BRIGHTNESS, clientId);
     snprintf(statusPubTopic, sizeof(statusPubTopic), "%s/%s", MQTT_PUB_TOPIC_STATUS, clientId);
 
     Serial.printf("Home Assistant MQTT client ID: %s\n", clientId);

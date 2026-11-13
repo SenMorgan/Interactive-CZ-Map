@@ -71,6 +71,9 @@ static bool indicationShown = false;
 // While true, the LEDs task does not touch the strip (it is owned by the progress indicator)
 static bool progressActive = false;
 
+// Main brightness of the whole map. It scales all effects, 255 means no limit
+static uint8_t mainBrightness = 255;
+
 // Forward declarations
 void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
 void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles);
@@ -212,6 +215,40 @@ void ledsApplyMapState()
 }
 
 /**
+ * @brief Sets the main brightness of the whole map.
+ *
+ * The main brightness scales all LED effects and status indications on top of their own brightness.
+ * The value is not stored in flash and is 255 (no limit) after boot.
+ * The firmware update progress indication uses its own fixed brightness.
+ *
+ * @param brightness The main brightness [0, 255]. 255 means no limit, 0 turns the LEDs off.
+ */
+void ledsSetMainBrightness(uint8_t brightness)
+{
+    ledsLock();
+
+    mainBrightness = brightness;
+
+    // The progress indication owns the strip brightness while it is active
+    if (!progressActive)
+        FastLED.setBrightness(mainBrightness);
+
+    ledsUnlock();
+}
+
+/**
+ * @brief Returns the main brightness set by ledsSetMainBrightness().
+ */
+uint8_t ledsGetMainBrightness()
+{
+    ledsLock();
+    uint8_t brightness = mainBrightness;
+    ledsUnlock();
+
+    return brightness;
+}
+
+/**
  * @brief Resets the states of all LEDs.
  *
  * This function iterates through all LEDs and sets their color to black,
@@ -274,8 +311,8 @@ void stopProgressIndication()
 {
     ledsLock();
 
-    // Reset brightness
-    FastLED.setBrightness(255);
+    // Restore the main brightness
+    FastLED.setBrightness(mainBrightness);
 
     // Reset all LEDs
     resetLedsStates();
@@ -584,6 +621,10 @@ void ledsTaskInit(void)
 
     // Initialize LED strip
     FastLED.addLeds<WS2812B, LEDS_PIN, GRB>(leds, LEDS_COUNT);
+
+    // Temporal dithering is used only below full brightness and may flicker on dim LEDs
+    FastLED.setDither(DISABLE_DITHER);
+    FastLED.setBrightness(mainBrightness);
 
     // Initialize LEDs command queues
     for (uint8_t i = 0; i < LEDS_COUNT; i++)

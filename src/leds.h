@@ -34,5 +34,7 @@ void pushLedCommand(uint8_t index, LedCommand command);
 void ledsSetStatus(LedsStatus status);
 LedsStatus ledsGetStatus();
 void ledsApplyMapState();
+void ledsSetMainBrightness(uint8_t brightness);
+uint8_t ledsGetMainBrightness();
 
 #endif // LEDS_H
