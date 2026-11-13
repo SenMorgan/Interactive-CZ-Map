@@ -40,8 +40,8 @@ bool validateBrightness(JsonVariant jsonValue, uint16_t *brightness, int16_t led
     // Check if the JSON variant is of integer type
     if (jsonValue.is<int>())
     {
-        // Retrieve the brightness value as a signed 16-bit integer
-        int16_t value = jsonValue.as<int>();
+        // Retrieve the brightness value. Keep the full int range, so that big values are not truncated into the valid range
+        int value = jsonValue.as<int>();
 
         // Validate that the brightness value is within the acceptable range
         if (value < 0 || value > 255)
@@ -91,8 +91,8 @@ bool validateDuration(JsonVariant jsonValue, uint16_t *duration, int16_t ledId =
     // Check if the JSON variant is of integer type
     if (jsonValue.is<int>())
     {
-        // Retrieve the duration value as a signed 16-bit integer
-        int16_t value = jsonValue.as<int>();
+        // Retrieve the duration value. Keep the full int range, so that big values are not truncated into the valid range
+        int value = jsonValue.as<int>();
 
         // Validate that the duration value is within the acceptable range
         if (value < 0 || value > MAX_FADE_DURATION)
@@ -142,8 +142,8 @@ bool validateCount(JsonVariant jsonValue, uint16_t *count, int16_t ledId = 0)
     // Check if the JSON variant is of integer type
     if (jsonValue.is<int>())
     {
-        // Retrieve the count value as an unsigned 16-bit integer
-        int16_t value = jsonValue.as<int>();
+        // Retrieve the count value. Keep the full int range, so that big values are not truncated into the valid range
+        int value = jsonValue.as<int>();
 
         // Validate that the count value is within the acceptable range
         if (value < 1 || value > MAX_FADE_REPEATS)
@@ -315,10 +315,16 @@ bool getLedColor(JsonObject &ledConfig, JsonArray &colors, CRGB *color, uint16_t
         // LED_COLOR_PALETTE_KEY is provided: color index from colors array
         int colorIndex = ledConfig[LED_COLOR_PALETTE_KEY].as<int>();
 
-        if (colorIndex < 0 || colorIndex >= colors.size())
+        if (colors.size() == 0)
+        {
+            Serial.printf("Error: Color palette is empty. Cannot use color palette index for LED %d.\n", ledId);
+            return false;
+        }
+
+        if (colorIndex < 0 || colorIndex >= (int)colors.size())
         {
             Serial.printf("Error: Invalid color palette index %d for LED %d. Must be between 0 and %d\n",
-                          colorIndex, ledId, colors.size() - 1);
+                          colorIndex, ledId, (int)colors.size() - 1);
             return false;
         }
 
@@ -353,23 +359,28 @@ bool getLedColor(JsonObject &ledConfig, JsonArray &colors, CRGB *color, uint16_t
  * @param globalCount The global count value to be used if not overridden.
  * @param colors The array of color palettes.
  */
-void parseAndSetSingleLed(uint16_t arrayIndex, JsonObject &ledConfig, int16_t globalBrightness,
+void parseAndSetSingleLed(uint16_t arrayIndex, JsonObject &ledConfig, uint16_t globalBrightness,
                           uint16_t globalDuration, uint16_t globalCount, JsonArray &colors)
 {
-    // Get LED ID if present, else use array index +1
-    int16_t ledId = 0; // Use 0 as default LED ID to detect if it was set
-    if (ledConfig[LED_ID_KEY].is<int>())
+    // Get LED ID if present, else use array index + 1. Keep the full int range for validation
+    int ledId = arrayIndex + 1;
+    if (!ledConfig[LED_ID_KEY].isNull())
     {
-        ledId = ledConfig[LED_ID_KEY].as<int>();
-        if (ledId < 1 || ledId > LEDS_COUNT)
+        if (!ledConfig[LED_ID_KEY].is<int>())
         {
-            Serial.printf("Error: invalid LED ID: %d\n", ledId);
+            Serial.printf("Error: LED ID at index %d is not an integer.\n", arrayIndex);
             return; // Skip invalid LED configurations
         }
+
+        ledId = ledConfig[LED_ID_KEY].as<int>();
     }
 
-    // Use LED ID if present, else use array index. Subtract 1 to convert to zero-based index
-    ledId = ledId > 0 ? ledId : arrayIndex + 1;
+    // The LED ID is 1-based
+    if (ledId < 1 || ledId > LEDS_COUNT)
+    {
+        Serial.printf("Error: invalid LED ID: %d. Must be between 1 and %d\n", ledId, LEDS_COUNT);
+        return; // Skip invalid LED configurations
+    }
 
     // Determine the color to use
     CRGB ledColor = CRGB::Black; // Default color
@@ -391,7 +402,7 @@ void parseAndSetSingleLed(uint16_t arrayIndex, JsonObject &ledConfig, int16_t gl
     // Get count, override global if specified
     uint16_t count = globalCount;
     if (!ledConfig[LED_COUNT_KEY].isNull() &&
-        !validateCount(ledConfig[LED_COUNT_KEY], &count))
+        !validateCount(ledConfig[LED_COUNT_KEY], &count, ledId))
         return; // Skip invalid LED configurations
 
     // Set the LED with the extracted parameters. The LED ID is 1-based, so we subtract 1
@@ -412,7 +423,7 @@ void parseAndSetSingleLed(uint16_t arrayIndex, JsonObject &ledConfig, int16_t gl
  * @param globalCount The global count value to be used if not overridden.
  * @param colors The array of color palettes.
  */
-void parseLedsArray(JsonDocument &doc, int16_t globalBrightness, int16_t globalDuration,
+void parseLedsArray(JsonDocument &doc, uint16_t globalBrightness, uint16_t globalDuration,
                     uint16_t globalCount, JsonArray &colors)
 {
     JsonArray leds = doc[LEDS_KEY].as<JsonArray>();
@@ -425,6 +436,13 @@ void parseLedsArray(JsonDocument &doc, int16_t globalBrightness, int16_t globalD
     // Iterate through each LED configuration
     for (size_t i = 0; i < leds.size(); ++i)
     {
+        // Skip entries that are not JSON objects, otherwise they would be handled as LEDs with default values
+        if (!leds[i].is<JsonObject>())
+        {
+            Serial.printf("Error: LED configuration at index %d is not an object.\n", (int)i);
+            continue;
+        }
+
         JsonObject ledConfig = leds[i].as<JsonObject>();
         parseAndSetSingleLed(i, ledConfig, globalBrightness, globalDuration, globalCount, colors);
     }

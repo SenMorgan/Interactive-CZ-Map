@@ -100,8 +100,9 @@ void drdTask(void *pvParameters)
     if (!validateResetReason())
     {
         Serial.println("Invalid reset reason - skipping Double Reset Detection");
-        // Clear flag
-        writeFlag(DRD_FLAG_CLEAR);
+        // Clear flag. Write only if needed to avoid flash wear when the device restarts repeatedly
+        if (isFlagSetInFS())
+            writeFlag(DRD_FLAG_CLEAR);
         // Delete the task
         vTaskDelete(NULL);
         return;

@@ -1,5 +1,6 @@
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
+#include <memory>
 #include "aws_iot.h"
 #include "constants.h"
 #include "leds_parser.h"
@@ -8,11 +9,17 @@
 #include "ha_client.h"
 
 // Interval for publishing device status (in milliseconds)
-#define STATUS_PUBLISH_INTERVAL 60 * 1000
+#define STATUS_PUBLISH_INTERVAL (60 * 1000)
 // Initial delay before attempting to reconnect to AWS IoT (in milliseconds)
-#define RECONNECT_INITIAL_DELAY 100
+#define RECONNECT_INITIAL_DELAY 1000
 // Maximum delay between reconnection attempts to AWS IoT (in milliseconds)
 #define RECONNECT_MAX_DELAY     30000
+// A connection that lasted at least this long is considered stable (in milliseconds).
+// Losing a stable connection resets the reconnect delay, losing an unstable one keeps the backoff.
+#define STABLE_CONNECTION_TIME 60000
+// How long the connection must be down before it is indicated on the map (in milliseconds).
+// Shorter outages are handled silently so that they do not interrupt the running LED effects.
+#define DISCONNECT_INDICATION_DELAY 10000
 // MQTT buffer size for handling larger messages
 #define MQTT_BUFFER_SIZE        8192
 // Maximum length of the client ID (could be extended if needed)
@@ -29,16 +36,24 @@ uint32_t awsReconnectAttempts = 0;
 // Counter for the number of received messages from AWS IoT
 uint32_t awsMsgsReceived = 0;
 
-// Pointer to the client ID
-const char *clientId = NULL;
+// Client ID. It is a copy, because the buffer of the caller may not outlive initAWS()
+static char clientId[MAX_CLIENT_ID_LENGTH + 1] = "";
+
+// Connection state used for the reconnect backoff and for the indication on the map
+static bool isConnected = false;          // Connection state seen in the previous call
+static bool everConnected = false;        // True after the first successful connection
+static uint32_t connectedSince = 0;       // Time of the last successful connection
+static uint32_t disconnectedSince = 0;    // Time when the connection loss was detected
+static uint32_t reconnectDelay = 0;       // Delay before the next connection attempt (0 = immediately)
+static uint32_t lastReconnectAttempt = 0; // Time when the last connection attempt finished
 
 // Variables to store device-specific MQTT topics to subscribe
-static char ledsSubTopic[sizeof(MQTT_SUB_TOPIC_LEDS) + MAX_CLIENT_ID_LENGTH];
-static char updateSubTopic[sizeof(MQTT_SUB_TOPIC_UPDATE) + MAX_CLIENT_ID_LENGTH];
+static char ledsSubTopic[sizeof(MQTT_SUB_TOPIC_LEDS) + MAX_CLIENT_ID_LENGTH + 1];
+static char updateSubTopic[sizeof(MQTT_SUB_TOPIC_UPDATE) + MAX_CLIENT_ID_LENGTH + 1];
 
 // Variables to store device-specific MQTT topics to publish
-static char statusPubTopic[sizeof(MQTT_PUB_TOPIC_STATUS) + MAX_CLIENT_ID_LENGTH];
-static char updateStatusPubTopic[sizeof(MQTT_PUB_TOPIC_UPDATE_STATUS) + MAX_CLIENT_ID_LENGTH];
+static char statusPubTopic[sizeof(MQTT_PUB_TOPIC_STATUS) + MAX_CLIENT_ID_LENGTH + 1];
+static char updateStatusPubTopic[sizeof(MQTT_PUB_TOPIC_UPDATE_STATUS) + MAX_CLIENT_ID_LENGTH + 1];
 
 // Function declarations
 void connectToAWS();
@@ -50,37 +65,36 @@ void handleUpdateCommand(JsonDocument &doc);
  * @brief Initializes the AWS IoT connection.
  *
  * This function configures the WiFiClientSecure with the AWS IoT device credentials,
- * sets up the MQTT client to connect to the AWS IoT endpoint, and subscribes to the
- * necessary MQTT topics. It also sets the message callback function to handle incoming
- * messages from the subscribed topics.
+ * sets up the MQTT client to connect to the AWS IoT endpoint, and composes the
+ * device-specific MQTT topics. It also sets the message callback function to handle
+ * incoming messages from the subscribed topics.
  *
- * The function will continuously attempt to connect to the AWS IoT endpoint until a
- * connection is established. If the connection fails, an error message is printed to
- * the Serial monitor.
+ * The function makes the first connection attempt. If it fails, maintainAWSConnection()
+ * keeps retrying from the main loop.
  *
- * @param id Pointer to the client ID to use for the AWS IoT connection.
- * @param idLength Length of the client ID.
+ * @param id Pointer to the client ID to use for the AWS IoT connection. The ID is copied.
+ * @param idLength Size of the client ID buffer.
  */
 void initAWS(const char *id, size_t idLength)
 {
     Serial.println(F("Initializing AWS IoT client..."));
 
     // Check if the client ID is valid
-    if (!id || idLength == 0)
+    if (!id || idLength == 0 || id[0] == '\0')
     {
         Serial.println(F("Error: Invalid client ID"));
         return;
     }
 
-    // Validate if the client ID length
-    if (idLength > MAX_CLIENT_ID_LENGTH)
+    // Validate the client ID length
+    if (strnlen(id, idLength) > MAX_CLIENT_ID_LENGTH)
     {
         Serial.println(F("Error: Client ID too long. Consider increasing MAX_CLIENT_ID_LENGTH"));
         return;
     }
 
-    // Store the client ID
-    clientId = id;
+    // Store a copy of the client ID
+    snprintf(clientId, sizeof(clientId), "%.*s", (int)idLength, id);
 
     // Configure WiFiClientSecure to use the AWS IoT device credentials
     net.setCACert(AWS_CERT_CA);
@@ -105,126 +119,153 @@ void initAWS(const char *id, size_t idLength)
     snprintf(updateStatusPubTopic, sizeof(updateStatusPubTopic), "%s/%s", MQTT_PUB_TOPIC_UPDATE_STATUS, clientId);
 
     // Attempt to connect to AWS IoT
-    Serial.println(F("Connecting to AWS IoT..."));
-    connectToAWS();
+    maintainAWSConnection();
 }
 
 /**
- * @brief Attempts to connect to AWS IoT and handles reconnection logic.
+ * @brief Returns a human-readable description of a PubSubClient state code.
  *
- * This function tries to establish a connection to AWS IoT using the client object.
- * If the connection is successful, it resets the reconnection delay, subscribes to
- * necessary MQTT topics, and publishes the device status. If the connection fails,
- * it prints the error code and retries after an exponential backoff delay.
+ * @param state The value returned by PubSubClient::state().
+ */
+static const char *mqttStateToString(int state)
+{
+    switch (state)
+    {
+        case MQTT_CONNECTION_TIMEOUT:
+            return "connection timeout";
+        case MQTT_CONNECTION_LOST:
+            return "connection lost";
+        case MQTT_CONNECT_FAILED:
+            return "network connection failed";
+        case MQTT_DISCONNECTED:
+            return "disconnected";
+        case MQTT_CONNECTED:
+            return "connected";
+        case MQTT_CONNECT_BAD_PROTOCOL:
+            return "bad protocol";
+        case MQTT_CONNECT_BAD_CLIENT_ID:
+            return "bad client ID";
+        case MQTT_CONNECT_UNAVAILABLE:
+            return "server unavailable";
+        case MQTT_CONNECT_BAD_CREDENTIALS:
+            return "bad credentials";
+        case MQTT_CONNECT_UNAUTHORIZED:
+            return "unauthorized";
+        default:
+            return "unknown";
+    }
+}
+
+/**
+ * @brief Makes one attempt to connect to AWS IoT.
+ *
+ * If the connection is successful, the function subscribes to the MQTT topics,
+ * publishes the device status and clears the connection indication on the map.
+ * After every attempt the reconnect delay is increased (exponential backoff).
+ * The delay is reset in maintainAWSConnection() only when a stable connection is lost,
+ * so a connection that drops right after it is established does not cause rapid reconnects.
+ *
+ * @note This function blocks during the TLS handshake.
  */
 void connectToAWS()
 {
-    static uint32_t reconnectDelay = 0;
-    static uint32_t lastReconnectAttempt = 0;
-    static bool connAttemptShown = false;
+    awsReconnectAttempts++; // Increment the number of reconnection attempts
+    Serial.printf("Connecting to AWS IoT (attempt %lu)...\n", (unsigned long)awsReconnectAttempts);
 
-    // Indicate connection attempt if the map is turned on
-    if (!connAttemptShown)
+    bool success = client.connect(clientId);
+
+    if (success)
     {
-        ledsNotify(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
-        connAttemptShown = true;
-    }
+        Serial.println(F("Connected to AWS IoT"));
 
-    // Check if the client ID is set
-    if (!clientId)
-    {
-        Serial.println(F("Error: Client ID must be set before connecting to AWS IoT"));
-        return;
-    }
-
-    uint32_t timeNow = millis();
-
-    // Attempt to connect only if the delay has passed
-    if (!client.connected() && (timeNow - lastReconnectAttempt >= reconnectDelay))
-    {
-        awsReconnectAttempts++;         // Increment the number of reconnection attempts
-        lastReconnectAttempt = timeNow; // Update the last reconnect attempt time
-
-        if (client.connect(clientId))
+        // Subscribe to the generic and to the device-specific MQTT topics
+        const char *topics[] = {MQTT_SUB_TOPIC_LEDS, MQTT_SUB_TOPIC_UPDATE, ledsSubTopic, updateSubTopic};
+        for (const char *topic : topics)
         {
-            // Connection successful
-            Serial.println(F("Connected to AWS IoT"));
-            reconnectDelay = RECONNECT_INITIAL_DELAY; // Reset reconnect delay
-            connAttemptShown = false;             // Reset flag
-
-            // Subscribe to the generic MQTT topics
-            client.subscribe(MQTT_SUB_TOPIC_LEDS);
-            client.subscribe(MQTT_SUB_TOPIC_UPDATE);
-
-            // Subscribe to device-specific MQTT topics
-            client.subscribe(ledsSubTopic);
-            client.subscribe(updateSubTopic);
-
-            // Publish the device status after successful connection
-            publishStatusAWS();
-
-            // Indicate connection success if the map is turned on
-            ledsNotify(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, 3);
+            if (!client.subscribe(topic))
+                Serial.printf("Failed to subscribe to topic '%s'\n", topic);
         }
-        else
-        {
-            // Connection failed - apply exponential backoff
-            Serial.printf("Connection to AWS IoT failed, rc=%d\n", client.state());
-            Serial.printf("Retrying in %lu ms\n", reconnectDelay);
 
-            if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
-                reconnectDelay *= 2;
-            else
-                reconnectDelay = RECONNECT_MAX_DELAY;
-        }
+        isConnected = true;
+        everConnected = true;
+        connectedSince = millis();
+
+        // Publish the device status after successful connection
+        publishStatusAWS();
+
+        // Clear the connection indication (flashes green if it was shown)
+        ledsSetStatus(LedsStatus::IDLE);
     }
+    else
+    {
+        Serial.printf("Connection to AWS IoT failed, rc=%d (%s)\n", client.state(), mqttStateToString(client.state()));
+    }
+
+    // Apply exponential backoff for the next attempt
+    if (reconnectDelay == 0)
+        reconnectDelay = RECONNECT_INITIAL_DELAY;
+    else if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
+        reconnectDelay *= 2;
+    else
+        reconnectDelay = RECONNECT_MAX_DELAY;
+
+    if (!success)
+        Serial.printf("Retrying in %lu ms\n", (unsigned long)reconnectDelay);
+
+    lastReconnectAttempt = millis();
 }
 
 /**
  * @brief Maintains the connection to AWS IoT.
  *
- * This function ensures that the MQTT client remains connected to AWS IoT and handles
- * MQTT loop processing. It should be called in the main loop to maintain the connection.
- * If the client is already connected, it simply returns. If the client is
- * not connected, it attempts to reconnect in a loop until successful.
+ * This function handles MQTT loop processing and reconnects to AWS IoT when the connection
+ * is lost. It should be called in the main loop. It never blocks longer than one connection attempt.
+ *
+ * The connection loss is indicated on the map only when it lasts longer than
+ * DISCONNECT_INDICATION_DELAY, or when another indication is already displayed.
  */
 void maintainAWSConnection()
 {
-    // If the client is connected, simply return
-    client.loop();
+    // Nothing to do until initAWS() succeeds
+    if (clientId[0] == '\0')
+        return;
 
-    if (client.connected())
+    bool wifiReady = (WiFi.status() == WL_CONNECTED && WiFi.localIP() != INADDR_NONE);
+
+    // Process incoming messages and keep-alive
+    if (client.loop())
     {
+        // Connected. Clear the indication left by a WiFi reconnect that the MQTT session survived
+        if (wifiReady)
+            ledsSetStatus(LedsStatus::IDLE);
         return;
     }
-    else
+
+    uint32_t timeNow = millis();
+
+    // Handle the transition from connected to disconnected
+    if (isConnected)
     {
-        Serial.printf("AWS IoT client disconnected. MQTT error code: %d\n", client.state());
-        // Optionally, print a user-friendly message based on the error code:
-        switch (client.state())
-        {
-            case MQTT_CONNECTION_TIMEOUT:
-                Serial.println("Connection timeout. Please check your network.");
-                break;
-            case MQTT_CONNECTION_LOST:
-                Serial.println("Connection lost. Trying to reconnect...");
-                break;
-            case MQTT_CONNECT_FAILED:
-                Serial.println("Connection failed. Check credentials and endpoint.");
-                break;
-            // Add more cases as needed
-            default:
-                Serial.println("Unknown MQTT error.");
-        }
+        isConnected = false;
+        disconnectedSince = timeNow;
+        Serial.printf("AWS IoT client disconnected, rc=%d (%s)\n", client.state(), mqttStateToString(client.state()));
+
+        // Reconnect immediately only if the lost connection was stable
+        if (timeNow - connectedSince >= STABLE_CONNECTION_TIME)
+            reconnectDelay = 0;
     }
 
     // Do not attempt to reconnect if WiFi is not connected or ESP does not have assigned IP
-    if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == INADDR_NONE)
+    if (!wifiReady)
         return;
 
-    // If the client is not connected, attempt to reconnect
-    Serial.println(F("AWS IoT client disconnected. Attempting to reconnect..."));
-    connectToAWS();
+    // Indicate the connection attempt: always on startup, otherwise only for longer outages
+    if (!everConnected || ledsGetStatus() != LedsStatus::IDLE || timeNow - disconnectedSince >= DISCONNECT_INDICATION_DELAY)
+        ledsSetStatus(LedsStatus::AWS_CONNECTING);
+
+    // Attempt to connect only if the delay has passed
+    if (reconnectDelay == 0 || timeNow - lastReconnectAttempt >= reconnectDelay)
+        connectToAWS();
 }
 
 /**
@@ -238,37 +279,39 @@ void maintainAWSConnection()
  */
 void publishJson(const char *topic, const JsonDocument &doc)
 {
-#define BUFFER_SIZE 256 // Size of the buffer for serializing JSON
-
-    // Allocate a buffer for the JSON document and serialize it
-    char buffer[BUFFER_SIZE];
-    size_t serializedSize = serializeJson(doc, buffer, BUFFER_SIZE);
-
-    // Check if the buffer is large enough for the JSON document
-    if (serializedSize >= BUFFER_SIZE)
-    {
-        Serial.printf("Failed to publish message to topic '%s': Buffer (%d bytes) too small for JSON (%d bytes)\n",
-                      topic, BUFFER_SIZE, serializedSize);
-        lastAwsPublishTime = millis(); // Update last publish time to prevent rapid publishing
-        return;
-    }
+    // Set last publish time even if publishing fails, to prevent rapid publishing
+    lastAwsPublishTime = millis();
 
     // Check if MQTT client is connected
     if (!client.connected())
     {
         Serial.printf("Error publishing to topic '%s': AWS IoT client not connected\n", topic);
-        lastAwsPublishTime = millis(); // Update last publish time to prevent rapid publishing
         return;
     }
 
+    // Check if the message fits into the MQTT buffer (fixed header + topic + payload)
+    size_t jsonSize = measureJson(doc);
+    if (jsonSize + strlen(topic) + MQTT_MAX_HEADER_SIZE + 2 > MQTT_BUFFER_SIZE)
+    {
+        Serial.printf("Failed to publish message to topic '%s': JSON (%u bytes) too big for the MQTT buffer\n",
+                      topic, (unsigned)jsonSize);
+        return;
+    }
+
+    // Allocate a buffer for the JSON document and serialize it
+    std::unique_ptr<char[]> buffer(new (std::nothrow) char[jsonSize + 1]);
+    if (!buffer)
+    {
+        Serial.printf("Failed to publish message to topic '%s': out of memory\n", topic);
+        return;
+    }
+    serializeJson(doc, buffer.get(), jsonSize + 1);
+
     // Publish the message to the specified topic
-    if (client.publish(topic, buffer))
-        Serial.printf("Published %d bytes to topic '%s'\n", serializedSize, topic);
+    if (client.publish(topic, buffer.get()))
+        Serial.printf("Published %u bytes to topic '%s'\n", (unsigned)jsonSize, topic);
     else
         Serial.printf("Failed to publish message to topic '%s'\n", topic);
-
-    // Set last publish time to the current time after attempting to publish
-    lastAwsPublishTime = millis();
 }
 
 /**

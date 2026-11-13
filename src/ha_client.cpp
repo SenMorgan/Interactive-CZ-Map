@@ -4,15 +4,21 @@
 
 #include "ha_client.h"
 #include "constants.h"
+#include "leds.h"
+
+// The Home Assistant client is optional. Without USE_HOME_ASSISTANT only the
+// isMapEnabled() stub at the end of this file is compiled, so the HA_MQTT_*
+// settings are not required and no second MQTT client is created.
+#ifdef USE_HOME_ASSISTANT
 
 // Initialize Wi-Fi and MQTT client
 WiFiClient haClientNet;
 PubSubClient haClient(haClientNet);
 
 // Interval for publishing device status (in milliseconds)
-#define HA_STATUS_PUBLISH_INTERVAL 10 * 1000
+#define HA_STATUS_PUBLISH_INTERVAL (10 * 1000)
 // Initial delay before attempting to reconnect to Home Assistant MQTT Broker (in milliseconds)
-#define RECONNECT_INITIAL_DELAY    100
+#define RECONNECT_INITIAL_DELAY    1000
 // Maximum delay between reconnection attempts to Home Assistant MQTT Broker (in milliseconds)
 #define RECONNECT_MAX_DELAY        10000
 // MQTT buffer size for handling larger messages
@@ -24,12 +30,14 @@ PubSubClient haClient(haClientNet);
 #define HA_TASK_CORE       1 // Core 0 is used by the WiFi
 
 // MQTT topics
-#define MQTT_SUB_TOPIC_ENABLE MQTT_BASE_TOPIC "/cmd/enable"
+#define MQTT_SUB_TOPIC_ENABLE     MQTT_BASE_TOPIC "/cmd/enable"
+#define MQTT_SUB_TOPIC_BRIGHTNESS MQTT_BASE_TOPIC "/cmd/brightness"
 #define MQTT_PUB_TOPIC_STATUS MQTT_BASE_TOPIC "/status/device"
 
 // Home Assistant discovery topics
 #define MQTT_DISCOVERY_SWITCH_TOPIC "homeassistant/switch/int_cz_map/%s/config"
 #define MQTT_DISCOVERY_SENSOR_TOPIC "homeassistant/sensor/int_cz_map/%s/config"
+#define MQTT_DISCOVERY_NUMBER_TOPIC "homeassistant/number/int_cz_map/%s/config"
 
 // Buffer size for MQTT topics
 #define TOPIC_BUFFER_SIZE 128
@@ -41,6 +49,7 @@ uint32_t haReconnectAttempts = 0;
 
 // Variables to store MQTT topics
 static char enableSubTopic[sizeof(MQTT_SUB_TOPIC_ENABLE) + CHIP_ID_LENGTH + 1];
+static char brightnessSubTopic[sizeof(MQTT_SUB_TOPIC_BRIGHTNESS) + CHIP_ID_LENGTH + 1];
 static char statusPubTopic[sizeof(MQTT_PUB_TOPIC_STATUS) + CHIP_ID_LENGTH + 1];
 
 // Indicates if the map is turned on (flashings allowed)
@@ -58,30 +67,57 @@ void publishStatusHA();
  */
 void haMessageHandler(char *topic, byte *payload, unsigned int length)
 {
-    String message;
-    for (unsigned int i = 0; i < length; i++)
-    {
-        message += (char)payload[i];
-    }
-
     if (strcmp(topic, enableSubTopic) == 0)
     {
-        if (message == "ON")
+        bool turnOn = (length == 2 && memcmp(payload, "ON", 2) == 0);
+        bool turnOff = (length == 3 && memcmp(payload, "OFF", 3) == 0);
+
+        if (turnOn || turnOff)
         {
-            mapState = true;
-            Serial.println("Map turned ON");
-        }
-        else if (message == "OFF")
-        {
-            mapState = false;
-            Serial.println("Map turned OFF");
+            Serial.printf("Map turned %s\n", turnOn ? "ON" : "OFF");
+
+            // Update the LEDs only when the state has changed: turning the map off clears them
+            if (mapState != turnOn)
+            {
+                mapState = turnOn;
+                ledsApplyMapState();
+            }
         }
         else
         {
-            Serial.printf("Invalid message received on topic '%s': %s\n", topic, message.c_str());
+            Serial.printf("Invalid message received on topic '%s': %.*s\n", topic, (int)length, (const char *)payload);
         }
 
         // Publish the current status after receiving the enable command
+        publishStatusHA();
+    }
+    else if (strcmp(topic, brightnessSubTopic) == 0)
+    {
+        // Copy the payload to a null-terminated buffer and parse it as a number.
+        // Home Assistant may send an integer ("128") or a float ("128.0")
+        char text[16];
+        char *end = text;
+        float value = -1.0f;
+
+        if (length > 0 && length < sizeof(text))
+        {
+            memcpy(text, payload, length);
+            text[length] = '\0';
+            value = strtof(text, &end);
+        }
+
+        if (end != text && *end == '\0' && value >= 0.0f && value <= 255.0f)
+        {
+            uint8_t brightness = (uint8_t)(value + 0.5f);
+            ledsSetMainBrightness(brightness);
+            Serial.printf("Main brightness set to %d\n", brightness);
+        }
+        else
+        {
+            Serial.printf("Invalid message received on topic '%s': %.*s\n", topic, (int)length, (const char *)payload);
+        }
+
+        // Publish the current status after receiving the brightness command
         publishStatusHA();
     }
 }
@@ -137,6 +173,7 @@ void publishStatusHA()
     JsonDocument doc;
 
     doc["enabled"] = mapState ? "ON" : "OFF";
+    doc["brightness"] = ledsGetMainBrightness();
     doc["haReconnectAttempts"] = haReconnectAttempts;
     doc["awsReconnectAttempts"] = awsReconnectAttempts;
     doc["uptime"] = millis() / 1000;
@@ -157,10 +194,8 @@ void publishStatusHA()
  */
 void periodicStatusPublishHA()
 {
-#ifdef USE_HOME_ASSISTANT
     if (millis() - lastHAPublishTime >= HA_STATUS_PUBLISH_INTERVAL)
         publishStatusHA();
-#endif
 }
 
 /**
@@ -170,11 +205,7 @@ void periodicStatusPublishHA()
  */
 bool isMapEnabled()
 {
-#ifdef USE_HOME_ASSISTANT
     return mapState;
-#else
-    return true;
-#endif
 }
 
 /**
@@ -218,6 +249,29 @@ void buildSwitchConfig(JsonDocument &doc, const char *clientId, char *topicBuffe
     doc["stat_t"] = statusPubTopic;
     doc["val_tpl"] = "{{ value_json.enabled }}";
     doc["ic"] = "mdi:map-legend";
+    doc["ret"] = true;
+    setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
+}
+
+void buildBrightnessNumberConfig(JsonDocument &doc, const char *clientId, char *topicBuffer)
+{
+    // Create Unique ID
+    String uniqId = String(clientId) + "_brightness";
+
+    // Build topic for the number configuration using the Unique ID
+    snprintf(topicBuffer, TOPIC_BUFFER_SIZE, MQTT_DISCOVERY_NUMBER_TOPIC, uniqId.c_str());
+
+    // Build the number configuration. The command is retained by the broker,
+    // so the map gets the last value back when it connects
+    doc["name"] = "Brightness";
+    doc["uniq_id"] = uniqId;
+    doc["cmd_t"] = brightnessSubTopic;
+    doc["stat_t"] = statusPubTopic;
+    doc["val_tpl"] = "{{ value_json.brightness }}";
+    doc["min"] = 0;
+    doc["max"] = 255;
+    doc["mode"] = "slider";
+    doc["ic"] = "mdi:brightness-6";
     doc["ret"] = true;
     setDeviceInfo(doc["dev"].to<JsonObject>(), clientId); // Add device information
 }
@@ -297,6 +351,11 @@ void publishDiscoveryConfig(const char *clientId)
     setOriginInfo(doc["o"].to<JsonObject>()); // Add origin info only for the first configuration
     publishJsonHA(topicBuffer, doc);
 
+    // Create and publish Brightness number configuration
+    doc.clear(); // Clear previous data
+    buildBrightnessNumberConfig(doc, clientId, topicBuffer);
+    publishJsonHA(topicBuffer, doc);
+
     // Create and publish AWS Reconnect Attempts sensor configuration
     doc.clear(); // Clear previous data
     buildAwsReconAttSensorConfig(doc, clientId, topicBuffer);
@@ -338,8 +397,8 @@ void connectToHA(const char *clientId)
     // Attempt to connect only if the delay has passed
     if (!haClient.connected() && (timeNow - lastReconnectAttempt >= reconnectDelay))
     {
-        haReconnectAttempts++;          // Increment the number of reconnection attempts
-        lastReconnectAttempt = timeNow; // Update the last reconnect attempt time
+        haReconnectAttempts++; // Increment the number of reconnection attempts
+        Serial.println(F("Connecting to Home Assistant MQTT Broker..."));
 
         if (haClient.connect(clientId, HA_MQTT_USER, HA_MQTT_PASS))
         {
@@ -349,6 +408,7 @@ void connectToHA(const char *clientId)
 
             // Subscribe to topics
             haClient.subscribe(enableSubTopic);
+            haClient.subscribe(brightnessSubTopic);
 
             // Publish the device status after successful connection
             publishDiscoveryConfig(clientId);
@@ -357,14 +417,19 @@ void connectToHA(const char *clientId)
         else
         {
             // Connection failed - apply exponential backoff
-            Serial.printf("Connection to Home Assistant MQTT Broker failed, rc=%d\n", haClient.state());
-            Serial.printf("Retrying in %lu ms\n", reconnectDelay);
-
-            if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
+            if (reconnectDelay == 0)
+                reconnectDelay = RECONNECT_INITIAL_DELAY;
+            else if (reconnectDelay < RECONNECT_MAX_DELAY / 2)
                 reconnectDelay *= 2;
             else
                 reconnectDelay = RECONNECT_MAX_DELAY;
+
+            Serial.printf("Connection to Home Assistant MQTT Broker failed, rc=%d\n", haClient.state());
+            Serial.printf("Retrying in %lu ms\n", (unsigned long)reconnectDelay);
         }
+
+        // Update the last reconnect attempt time after the (blocking) attempt
+        lastReconnectAttempt = millis();
     }
 }
 
@@ -388,28 +453,23 @@ void haClientTask(void *pvParameters)
 
     // Compose topics
     snprintf(enableSubTopic, sizeof(enableSubTopic), "%s/%s", MQTT_SUB_TOPIC_ENABLE, clientId);
+    snprintf(brightnessSubTopic, sizeof(brightnessSubTopic), "%s/%s", MQTT_SUB_TOPIC_BRIGHTNESS, clientId);
     snprintf(statusPubTopic, sizeof(statusPubTopic), "%s/%s", MQTT_PUB_TOPIC_STATUS, clientId);
 
-    // Attempt to connect to the Home Assistant MQTT Broker
-    Serial.println(F("Connecting to Home Assistant MQTT Broker..."));
-    Serial.printf("Client ID: %s\n", clientId);
-    connectToHA(clientId);
+    Serial.printf("Home Assistant MQTT client ID: %s\n", clientId);
 
+    // The task function must never return, otherwise FreeRTOS aborts and the ESP32 reboots
     for (;;)
     {
-        // If the client is connected, simply return
         if (haClient.loop())
         {
+            // The client is connected
             periodicStatusPublishHA();
         }
-        else
+        else if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != INADDR_NONE)
         {
-            // Do not attempt to reconnect if WiFi is not connected or ESP does not have assigned IP
-            if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == INADDR_NONE)
-                return;
-
-            // If the client is not connected, attempt to reconnect
-            Serial.println(F("Home Assistant MQTT client disconnected. Attempting to reconnect..."));
+            // The client is not connected - attempt to (re)connect, but only if
+            // WiFi is connected and ESP has assigned IP
             connectToHA(clientId);
         }
 
@@ -434,8 +494,9 @@ void haClientTaskInit(char *clientId, size_t idLength)
     }
 
     // Copy the client ID to a new buffer, otherwise it will be lost when the task is created
-    char *clientIdCopy = new char[idLength];
+    char *clientIdCopy = new char[idLength + 1];
     strncpy(clientIdCopy, clientId, idLength);
+    clientIdCopy[idLength] = '\0';
 
     if (xTaskCreatePinnedToCore(haClientTask,
                                 "haClientTask",
@@ -449,3 +510,17 @@ void haClientTaskInit(char *clientId, size_t idLength)
         delete[] clientIdCopy;
     }
 }
+
+#else // USE_HOME_ASSISTANT
+
+/**
+ * @brief Checks if the map is enabled.
+ *
+ * @return Always true, because the map cannot be turned off without Home Assistant.
+ */
+bool isMapEnabled()
+{
+    return true;
+}
+
+#endif // USE_HOME_ASSISTANT

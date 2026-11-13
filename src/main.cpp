@@ -11,12 +11,14 @@ void setup()
     initSerial();
 
     // Get the ESP32 Chip ID
-    char chipID[CHIP_ID_LENGTH];
-    getEsp32ChipID(chipID, sizeof(chipID));
+    char chipID[CHIP_ID_LENGTH] = "";
+    if (!getEsp32ChipID(chipID, sizeof(chipID)))
+        Serial.println(F("Error: Failed to get the Chip ID"));
     Serial.print(F("Initializing Interactive CZ Map device with Chip ID: "));
     Serial.println(chipID);
 
-    // Initialize modules
+    // Initialize modules. They keep their own copies of the Chip ID,
+    // because this buffer does not exist after setup() returns
     ledsTaskInit();
     initWiFiManager(chipID);
 
@@ -38,5 +40,5 @@ void loop()
     handleWiFi();               // Maintain WiFi connection
     maintainAWSConnection();    // Maintain the MQTT connection
     periodicStatusPublishAWS(); // Publish the device status periodically
-    yield();                    // Allow the ESP32 to perform background tasks
+    delay(2);                   // Let the other tasks run instead of spinning at full speed
 }

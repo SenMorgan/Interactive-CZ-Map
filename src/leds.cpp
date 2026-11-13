@@ -1,6 +1,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <FastLED.h>
 #include "leds.h"
 #include "constants.h"
@@ -18,6 +19,9 @@
 // Circle effect parameters
 #define CIRCLE_EFFECT_BRIGHTNESS      50
 #define PROGRESS_INDICATOR_BRIGHTNESS 50
+
+// Number of green flashes (ring) shown when the system status returns to idle
+#define STATUS_SUCCESS_FADE_CYCLES 2
 
 // Define the array of LEDs in the circle in clockwise order
 const uint8_t CIRCLE_LEDS_ARRAY[] = {1, 2, 5, 7, 12, 21, 29, 31, 17, 25, 30, 36, 35, 42, 44, 56, 61, 65, 68,
@@ -44,7 +48,7 @@ struct LedState
     bool useFadeIn = true;              // Should the LED fade in
     uint32_t startTime = 0;             // Time when the effect started
     FadeDirection direction = FADE_OUT; // Current fade direction
-    QueueHandle_t commandQueue;         // Queue to hold the commands for the LED
+    QueueHandle_t commandQueue = NULL;  // Queue to hold the commands for the LED
 };
 
 // Array to hold the state of all LEDs
@@ -56,8 +60,42 @@ TaskHandle_t ledsTaskHandle = NULL;
 // Variable to store initial notification control pin state
 bool notifyAllowed = false;
 
+// Mutex protecting `leds`, `ledStates` and the status variables below.
+// They are used by the LEDs task, the Arduino loop task and the Home Assistant task.
+static SemaphoreHandle_t ledsMutex = NULL;
+
+// Current system status and whether its indication is actually displayed on the map
+static LedsStatus currentStatus = LedsStatus::IDLE;
+static bool indicationShown = false;
+
+// While true, the LEDs task does not touch the strip (it is owned by the progress indicator)
+static bool progressActive = false;
+
+// Main brightness of the whole map. It scales all effects, 255 means no limit
+static uint8_t mainBrightness = 255;
+
 // Forward declarations
 void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn = true);
+void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles);
+void resetLedsStates();
+
+/**
+ * @brief Locks the LEDs mutex. Does nothing if the mutex is not created yet.
+ */
+static inline void ledsLock()
+{
+    if (ledsMutex != NULL)
+        xSemaphoreTake(ledsMutex, portMAX_DELAY);
+}
+
+/**
+ * @brief Unlocks the LEDs mutex. Does nothing if the mutex is not created yet.
+ */
+static inline void ledsUnlock()
+{
+    if (ledsMutex != NULL)
+        xSemaphoreGive(ledsMutex);
+}
 
 /**
  * @brief Reads the status of the notification control pin and updates the internal state.
@@ -73,19 +111,141 @@ void getNotifyControlPinStatus()
 }
 
 /**
- * @brief Notifies via LEDs with the specified color, fade duration, and fade cycles.
+ * @brief Starts the looping circle effect that belongs to the given status.
  *
- * This function checks if LED notifications are allowed and then triggers a circular LED effect accordingly.
+ * @param status Any status except LedsStatus::IDLE.
  *
- * @param color The color to set the circle LEDs to.
- * @param fadeDuration The duration of the fade effect in milliseconds.
- * @param fadeCycles The number of times the effect should repeat. Use LOOP_INDEFINITELY for infinite.
+ * @note Must be called with the LEDs mutex locked.
  */
-void ledsNotify(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
+static void showStatusIndication(LedsStatus status)
 {
-    // Only trigger the LED effect if notifications are allowed and the map is enabled
-    if (notifyAllowed && isMapEnabled())
-        circleLedEffect(color, fadeDuration, fadeCycles);
+    switch (status)
+    {
+        case LedsStatus::CONFIG_PORTAL:
+            circleLedEffect(CRGB::Orange, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+            break;
+        case LedsStatus::WIFI_CONNECTING:
+            circleLedEffect(CRGB::Blue, CIRCLE_EFFECT_SLOW_FADE_DURATION, LOOP_INDEFINITELY);
+            break;
+        case LedsStatus::AWS_CONNECTING:
+            circleLedEffect(CRGB::Purple, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+            break;
+        case LedsStatus::FATAL_ERROR:
+            circleLedEffect(CRGB::Red, CIRCLE_EFFECT_FAST_FADE_DURATION, LOOP_INDEFINITELY);
+            break;
+        default:
+            return;
+    }
+
+    indicationShown = true;
+}
+
+/**
+ * @brief Sets the system status and updates its indication on the map.
+ *
+ * The call does nothing when the status has not changed, so it is safe to call it repeatedly.
+ * An indication is displayed only if notifications are allowed by the jumper and the map is enabled.
+ * When the status returns to LedsStatus::IDLE, the map flashes green, but only if an indication
+ * was displayed before. Otherwise the running LED effects are left untouched.
+ *
+ * @param status The new system status.
+ */
+void ledsSetStatus(LedsStatus status)
+{
+    ledsLock();
+
+    if (status != currentStatus)
+    {
+        currentStatus = status;
+        bool allowed = notifyAllowed && isMapEnabled();
+
+        if (status != LedsStatus::IDLE)
+        {
+            if (allowed)
+                showStatusIndication(status);
+        }
+        else if (indicationShown)
+        {
+            // Replace the looping indication with a short success effect
+            if (allowed)
+                circleLedEffect(CRGB::Green, CIRCLE_EFFECT_FAST_FADE_DURATION, STATUS_SUCCESS_FADE_CYCLES);
+            else
+                resetLedsStates();
+
+            indicationShown = false;
+        }
+    }
+
+    ledsUnlock();
+}
+
+/**
+ * @brief Returns the current system status set by ledsSetStatus().
+ */
+LedsStatus ledsGetStatus()
+{
+    ledsLock();
+    LedsStatus status = currentStatus;
+    ledsUnlock();
+
+    return status;
+}
+
+/**
+ * @brief Applies the map enable state (see isMapEnabled()) to the LEDs.
+ *
+ * Call it after the map was turned on or off. Turning the map off stops all running effects
+ * and drops the queued commands. Turning it on restores the indication of the current status.
+ */
+void ledsApplyMapState()
+{
+    ledsLock();
+
+    if (!isMapEnabled())
+    {
+        resetLedsStates();
+        indicationShown = false;
+    }
+    else if (notifyAllowed && currentStatus != LedsStatus::IDLE && !indicationShown)
+    {
+        showStatusIndication(currentStatus);
+    }
+
+    ledsUnlock();
+}
+
+/**
+ * @brief Sets the main brightness of the whole map.
+ *
+ * The main brightness scales all LED effects and status indications on top of their own brightness.
+ * The value is not stored in flash and is 255 (no limit) after boot.
+ * The firmware update progress indication uses its own fixed brightness.
+ *
+ * @param brightness The main brightness [0, 255]. 255 means no limit, 0 turns the LEDs off.
+ */
+void ledsSetMainBrightness(uint8_t brightness)
+{
+    ledsLock();
+
+    mainBrightness = brightness;
+
+    // The progress indication owns the strip brightness while it is active
+    if (!progressActive)
+        FastLED.setBrightness(mainBrightness);
+
+    ledsUnlock();
+}
+
+/**
+ * @brief Returns the main brightness set by ledsSetMainBrightness().
+ */
+uint8_t ledsGetMainBrightness()
+{
+    ledsLock();
+    uint8_t brightness = mainBrightness;
+    ledsUnlock();
+
+    return brightness;
 }
 
 /**
@@ -96,6 +256,7 @@ void ledsNotify(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
  * its default state.
  *
  * @note This function does not update the LED strip. Call FastLED.show() after
+ * @note Must be called with the LEDs mutex locked.
  */
 void resetLedsStates()
 {
@@ -120,39 +281,47 @@ void resetLedsStates()
 }
 
 /**
- * @brief Starts the progress indication by suspending the LED task and resetting all LEDs.
+ * @brief Starts the progress indication by taking the LED strip from the LEDs task and resetting all LEDs.
  *
  * This function should be called before starting the progress indication to prevent concurrent access
- * to the LED strip by the LED task. Without this, the progress indication may have flickering issues.
+ * to the LED strip by the LEDs task. Without this, the progress indication may have flickering issues.
  */
 void startProgressIndication()
 {
-    // Pause the task to prevent concurrent access
-    vTaskSuspend(ledsTaskHandle);
+    ledsLock();
+
+    // Stop the LEDs task from refreshing the strip
+    progressActive = true;
 
     // Set brightness
     FastLED.setBrightness(PROGRESS_INDICATOR_BRIGHTNESS);
 
     // Reset all LEDs
     resetLedsStates();
+    indicationShown = false;
+    FastLED.show();
+
+    ledsUnlock();
 }
 
 /**
- * @brief Stops the progress indication by resetting all LEDs and resuming the LED task.
- *
- * This function resets the states of all LEDs to their default state and resumes the LED task
- * to allow normal operation to continue.
+ * @brief Stops the progress indication by resetting all LEDs and giving the LED strip back to the LEDs task.
  */
 void stopProgressIndication()
 {
-    // Reset brightness
-    FastLED.setBrightness(255);
+    ledsLock();
+
+    // Restore the main brightness
+    FastLED.setBrightness(mainBrightness);
 
     // Reset all LEDs
     resetLedsStates();
+    indicationShown = false;
 
-    // Resume the task to allow normal operation
-    vTaskResume(ledsTaskHandle);
+    // Allow the LEDs task to refresh the strip again
+    progressActive = false;
+
+    ledsUnlock();
 }
 
 /**
@@ -162,6 +331,8 @@ void stopProgressIndication()
  *
  * @param progress Progress percentage (0 to 100).
  * @param color Color of the LEDs.
+ *
+ * @note Call startProgressIndication() first.
  */
 void progressIndicator(uint8_t progress, CRGB color)
 {
@@ -173,12 +344,16 @@ void progressIndicator(uint8_t progress, CRGB color)
     uint8_t totalLeds = sizeof(CIRCLE_LEDS_ARRAY) / sizeof(CIRCLE_LEDS_ARRAY[0]);
     uint8_t ledsToLight = (progress * totalLeds) / 100;
 
+    ledsLock();
+
     // Light up LEDs based on progress
     for (uint8_t i = 0; i < ledsToLight; i++)
         leds[CIRCLE_LEDS_ARRAY[i]] = color;
 
     // Update the LED strip
     FastLED.show();
+
+    ledsUnlock();
 }
 
 /**
@@ -190,6 +365,8 @@ void progressIndicator(uint8_t progress, CRGB color)
  * @param color The color to set the circle LEDs to.
  * @param fadeDuration The duration of the fade effect in milliseconds.
  * @param fadeCycles The number of times the effect should repeat. Use LOOP_INDEFINITELY for infinite.
+ *
+ * @note Must be called with the LEDs mutex locked.
  */
 void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
 {
@@ -211,6 +388,8 @@ void circleLedEffect(CRGB color, uint16_t fadeDuration, int16_t fadeCycles)
  * @param fadeCycles The number of times the fade effect should repeat [1, MAX_FADE_REPEATS]. Use LOOP_INDEFINITELY for infinite.
  * @param color The color to set for the LED from the CRGB color palette.
  * @param useFadeIn Flag to indicate if the LED should fade in or just fade out.
+ *
+ * @note Must be called with the LEDs mutex locked.
  */
 void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fadeCycles, CRGB color, bool useFadeIn)
 {
@@ -224,11 +403,8 @@ void setLed(uint8_t index, uint8_t brightness, uint16_t fadeDuration, int16_t fa
     // Get the LED state from the array
     LedState &state = ledStates[index];
 
-    // Validate and set the brightness
-    if (brightness <= 255)
-        state.brightness = brightness;
-    else
-        Serial.printf("Brightness [%d] is out of bounds [0, 255]\n", brightness);
+    // Set the brightness (the whole uint8_t range is valid)
+    state.brightness = brightness;
 
     // Validate and set the fade duration
     if (fadeDuration <= MAX_FADE_DURATION)
@@ -276,6 +452,10 @@ void pushLedCommand(uint8_t index, LedCommand command)
     // Get the LED state from the array
     LedState &state = ledStates[index];
 
+    // The queues are created in ledsTaskInit()
+    if (state.commandQueue == NULL)
+        return;
+
     // Send the command to the queue
     if (xQueueSend(state.commandQueue, &command, 0) != pdTRUE)
     {
@@ -290,6 +470,8 @@ void pushLedCommand(uint8_t index, LedCommand command)
  * If the effect is active, it calculates the elapsed time since the effect started and adjusts the brightness accordingly.
  * If the effect has completed for the current cycle, it switches the fade direction or decreases the repeat count unless it's set to infinite.
  * Finally, it updates the LED strip to reflect the changes.
+ *
+ * @note Must be called with the LEDs mutex locked.
  */
 void refreshLeds()
 {
@@ -349,6 +531,7 @@ void refreshLeds()
                         if (state.fadeCycles <= 0)
                         {
                             leds[i] = CRGB::Black;
+                            state.fadeCycles = 0;
                             state.isFading = false;
                             continue;
                         }
@@ -372,23 +555,11 @@ void refreshLeds()
                 state.startTime = currentTime;
             }
         }
-        else if (state.fadeCycles != 0)
-        {
-            // Start or restart the fade effect
-            state.isFading = true;
-            state.direction = state.useFadeIn ? FADE_IN : FADE_OUT;
-            state.startTime = currentTime;
-
-            if (state.direction == FADE_IN)
-                leds[i] = CRGB::Black;
-            else
-                leds[i].nscale8_video(state.brightness);
-        }
         else
         {
             // If all fade cycles are completed, try to get a new command from the queue
             LedCommand command;
-            if (xQueueReceive(state.commandQueue, &command, 0) == pdTRUE)
+            if (state.commandQueue != NULL && xQueueReceive(state.commandQueue, &command, 0) == pdTRUE)
             {
                 // Set new command without fading in
                 setLed(i, command.brightness, command.fadeDuration, command.fadeCycles, command.color, false);
@@ -403,8 +574,8 @@ void refreshLeds()
 /**
  * @brief Task to manage LED strip updates.
  *
- * This task initializes the LED strip, sets all LEDs to off, and then enters a loop
- * where it updates the LED states at a fixed frequency.
+ * This task updates the LED states at a fixed frequency. It skips the update
+ * while the progress indication owns the LED strip.
  *
  * @param pvParameters Pointer to the parameters passed to the task (not used).
  */
@@ -413,8 +584,47 @@ void ledsTask(void *pvParameters)
     const TickType_t xFrequency = pdMS_TO_TICKS(1000 / LEDS_TASK_FREQUENCY_HZ);
     TickType_t xLastWakeTime = xTaskGetTickCount();
 
+    Serial.println("ledsTask started");
+
+    // Main task loop
+    for (;;)
+    {
+        // Update LED states
+        ledsLock();
+        if (!progressActive)
+            refreshLeds();
+        ledsUnlock();
+
+        // Wait for the next cycle.
+        xTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+/**
+ * @brief Initializes the LED strip and starts the leds task.
+ *
+ * This function initializes the LED strip, the mutex and the command queues, turns all LEDs off,
+ * and then creates a new task called "ledsTask" and assigns it to a specific core.
+ * Everything is ready when the function returns, so other modules can use the LEDs right away.
+ *
+ * @note This function should be called once during the setup phase of the program.
+ */
+void ledsTaskInit(void)
+{
+    // Get the initial status of the notification control pin
+    getNotifyControlPinStatus();
+
+    // Create the mutex protecting the LEDs data
+    ledsMutex = xSemaphoreCreateMutex();
+    if (ledsMutex == NULL)
+        Serial.println("Failed to create ledsMutex");
+
     // Initialize LED strip
     FastLED.addLeds<WS2812B, LEDS_PIN, GRB>(leds, LEDS_COUNT);
+
+    // Temporal dithering is used only below full brightness and may flicker on dim LEDs
+    FastLED.setDither(DISABLE_DITHER);
+    FastLED.setBrightness(mainBrightness);
 
     // Initialize LEDs command queues
     for (uint8_t i = 0; i < LEDS_COUNT; i++)
@@ -429,31 +639,6 @@ void ledsTask(void *pvParameters)
     // Set all LEDs to off
     resetLedsStates();
     FastLED.show();
-
-    Serial.println("ledsTask started");
-
-    // Main task loop
-    for (;;)
-    {
-        // Update LED states
-        refreshLeds();
-
-        // Wait for the next cycle.
-        xTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
-
-/**
- * @brief Initializes the leds task.
- *
- * This function creates a new task called "ledsTask" and assigns it to a specific core.
- *
- * @note This function should be called once during the setup phase of the program.
- */
-void ledsTaskInit(void)
-{
-    // Get the initial status of the notification control pin
-    getNotifyControlPinStatus();
 
     // Create the LEDs task and assign it to a specific core
     if (xTaskCreatePinnedToCore(ledsTask,
