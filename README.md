@@ -17,6 +17,18 @@ The project was created in PlatformIO 22.11.2024
 5. Use PlatformIO to build and upload the project to your ESP device.
 6. Default password for AP mode is `12345678`.
 
+## LED flicker
+
+LEDs that are off could briefly flash a random color while other LEDs were lit. The cause was the FastLED RMT driver: with the default buffer it has to refill the LED signal from an interrupt every few tens of microseconds, and any delay corrupts a frame. The fix is in `platformio.ini`:
+
+```ini
+build_flags =
+	-D FASTLED_RMT_MAX_CHANNELS=1
+	-D FASTLED_RMT_MEM_BLOCKS=8
+```
+
+These flags give the single LED strip all 8 RMT memory blocks instead of 2. Keep them. The alternatives made it worse: `FASTLED_RMT_BUILTIN_DRIVER=1` (flicker twice in a row) and `FASTLED_ESP32_I2S=1` (more flicker).
+
 ## Testing
 You can send messages to the device in AWS IoT MQTT Test console. See `test` folder for examples.
 

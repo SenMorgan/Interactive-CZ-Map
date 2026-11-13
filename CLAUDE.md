@@ -67,6 +67,7 @@ The README has full examples. When you change keys or limits, update the README 
 
 - Commit messages use Conventional Commits (`feat:`, `fix:`, `refactor:`, `chore:`, `build:`, `docs:`).
 - Library versions are pinned exactly in `platformio.ini`. Keep them pinned.
+- Keep the build flags `FASTLED_RMT_MAX_CHANNELS=1` and `FASTLED_RMT_MEM_BLOCKS=8`. They fix random-color flicker on LEDs that are off while others are lit (the default 2-block RMT buffer needs interrupt refills that arrive late). Confirmed on hardware; `FASTLED_RMT_BUILTIN_DRIVER=1` and `FASTLED_ESP32_I2S=1` were tried and made it worse.
 - Functions have Doxygen-style `@brief` comments. Logging goes through `Serial.printf` and `F()` strings. Don't log WiFi passwords; this was removed on purpose.
 - Use `ledsSetStatus()`, not direct LED effect calls, for status indications, so that the notify jumper and the HA enable switch are respected.
 - A FreeRTOS task function must never `return`; that aborts and reboots the ESP32.
